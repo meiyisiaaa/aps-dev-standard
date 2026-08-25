@@ -1,0 +1,8 @@
+schema_version: 1
+host_id: ""
+host_type: ""
+verified_at: null
+capabilities: {}
+skill_discovery: []
+instruction_chain: []
+notes: []

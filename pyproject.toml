@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-project-standard-cli"
+version = "1.0.0"
+description = "Zero-dependency CLI for installing and operating AI Project Standard"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Private/Internal Use"}
+authors = [{name = "AI Project Standard"}]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+]
+
+[project.scripts]
+aps = "aps_cli.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+aps_cli = ["bundle/**/*"]

@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=./schemas/state.schema.json
+schema_version: 1
+standard_version: "1.0.0"
+revision: 1
+
+cycle: CYCLE-001
+stage: 1
+stage_type: GATED
+stage_status: ACTIVE
+gate_status: PENDING
+
+current_goal: ""
+scope_ref: SCOPE-001
+blockers: []
+pending_decision_refs: []
+active_change_refs: []
+major_risk_refs: []
+
+next_action: null
+updated_at: null
+updated_by: coordinator

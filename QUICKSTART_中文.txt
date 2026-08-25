@@ -1,0 +1,33 @@
+APS 一键安装
+===========
+
+仓库创建后先执行一次：
+
+python scripts/configure_repository.py OWNER/REPO
+
+git add .
+git commit -m "Configure APS distribution"
+git push
+
+git tag v1.0.0
+git push origin v1.0.0
+
+之后任何机器：
+
+macOS / Linux：
+curl -fsSL https://raw.githubusercontent.com/meiyisiaaa/aps-dev-standard/main/install.sh | sh
+
+Windows PowerShell：
+irm https://raw.githubusercontent.com/meiyisiaaa/aps-dev-standard/main/install.ps1 | iex
+
+安装后进入项目：
+
+aps
+
+常用：
+aps init        新项目
+aps resume      接管旧项目
+aps rebaseline  旧项目从 Stage 01 重新审查
+aps doctor      项目体检
+aps status      查看状态
+aps upgrade     升级 Standard

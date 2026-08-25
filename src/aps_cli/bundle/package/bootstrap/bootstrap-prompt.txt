@@ -1,0 +1,27 @@
+使用本项目内的 AI Project Standard 作为权威开发规范：
+
+- Lifecycle Standard: `.ai/standards/lifecycle.md`
+- Artifact & State Standard: `.ai/standards/artifact-state.md`
+
+不要先完整读取两份 Standard。按最小上下文加载执行。
+
+Bootstrap 顺序：
+1. 检测 repo root、新项目 / 已有项目、当前 Agent Host 与当前生效的项目指令链。
+2. 先读取两份 Standard 的规范总则、Context Loading、Gate State Machine、Artifact Workspace / Registry、Agent Runtime 相关章节；之后只读取当前 Stage 所需章节。
+3. 读取或初始化根 `AGENTS.md`、`.ai/state.yaml`、`.ai/decisions.md`、`.ai/registry.yaml` 与 active cycle。已有内容不得无理由覆盖。
+4. 检测当前 Host，并读取 / 初始化 `.ai/runtime/hosts/<HOST-ID>.yaml`；Host capability 不写成唯一全局项目状态。
+5. 恢复 Source of Truth、Cycle、Stage / Stage Type / stage_status、适用时的 gate_status、Scope、blockers、Active Change、Pending Decision refs 与 revision。
+6. 已有项目先读取实际代码和当前有效 Artifact，判断真实 Stage；不要把旧项目伪装成新项目，也不要默认从 Build 开始。
+7. 普通任务只加载 `.ai/registry.yaml` 指向的当前 Stage / Task 最小必要 Source；旧 Cycle、历史研究和完整 Standard 按需加载。
+8. 使用 Agent Skill 时，解析当前 Host 的项目级 discovery 位置，检查 Skill 结构、路径、同名冲突、触发与最小 Smoke Eval。未注册或未验证的 Skill 不得假装已生效。
+9. 若文档、代码、状态、Skill 与已确认 Decision 冲突：新增 blocker；GATED Stage 设 `gate_status=PENDING`，非 GATED Stage 设 `stage_status=BLOCKED`；不要自行选择真相。
+10. 执行当前 Stage Contract / Transition Contract；不要一次执行整个开发周期。
+11. 全局治理写入遵守 Single Writer、revision 与 compare-before-write；子 Agent 不直接覆盖全局治理 Artifact。
+12. 只有满足当前 Transition / Gate 条件并完成 Validation 后才推进。
+
+能够通过调研、代码、已有 Artifact 或已确认 Decision 确定的问题直接处理。
+遇到关键不确定、方案冲突、重大产品 / 技术 / UI 取舍、需要改变已确认内容或扩大 Scope 时，新增 `user_decision` blocker，由我决策。
+
+涉及前端 / UI 时，必须从 Registry 解析 Design System Source、Visual Reference、Token / Component / Pattern / Motion Source 和项目级 Design System Agent Skill；按 Reuse → Compose → Extend → Create 执行。若 Skill 无法被当前 Host 发现或验证失败，先修复 Runtime / Adapter 或使用 Registry 中已记录 fallback。
+
+所有标记为 Artifact、状态变更或 Gate Evidence 的内容必须实际落盘并通过对应 Validation；只在聊天中输出不视为完成。

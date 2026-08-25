@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.ai-project-standard/registry.schema.json",
+  "title": "AI Project Standard Source Registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "standard_version", "revision", "sources", "artifacts", "dependencies", "critical_skills"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "standard_version": {"type": "string", "pattern": "^1\\.0\\."},
+    "revision": {"type": "integer", "minimum": 1},
+    "sources": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["domain", "path", "status", "load_policy"],
+        "properties": {
+          "domain": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "status": {"enum": ["DRAFT", "ACTIVE", "SUPERSEDED", "ARCHIVED", "DEPRECATED", "RETIRED"]},
+          "version": {"type": ["string", "null"]},
+          "last_verified": {"type": ["string", "null"]},
+          "load_policy": {"enum": ["always-minimal", "stage", "task", "stage/task", "ui-task", "trigger-only", "on-demand", "bootstrap/on-demand", "referenced-only", "bootstrap/runtime", "host-managed", "archive-never-default"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "artifacts": {"type": "object"},
+    "dependencies": {"type": "object"},
+    "critical_skills": {"type": "object"}
+  }
+}

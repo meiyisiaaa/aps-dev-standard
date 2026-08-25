@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=./schemas/registry.schema.json
+schema_version: 1
+standard_version: "1.0.0"
+revision: 1
+
+sources:
+  lifecycle_standard:
+    domain: Lifecycle Standard
+    path: .ai/standards/lifecycle.md
+    status: ACTIVE
+    load_policy: stage
+  artifact_standard:
+    domain: Artifact Standard
+    path: .ai/standards/artifact-state.md
+    status: ACTIVE
+    load_policy: bootstrap/on-demand
+  project_state:
+    domain: Project State
+    path: .ai/state.yaml
+    status: ACTIVE
+    load_policy: always-minimal
+  decisions:
+    domain: Decisions
+    path: .ai/decisions.md
+    status: ACTIVE
+    load_policy: referenced-only
+
+artifacts: {}
+dependencies: {}
+critical_skills: {}

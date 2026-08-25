@@ -1,0 +1,41 @@
+name: Release APS
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Verify version matches tag
+        shell: python
+        run: |
+          from pathlib import Path
+          import os
+          values = {}
+          for line in Path('VERSION').read_text(encoding='utf-8').splitlines():
+              k, sep, v = line.partition('=')
+              if sep:
+                  values[k.strip()] = v.strip()
+          expected = 'v' + values['APS_CLI']
+          actual = os.environ['GITHUB_REF_NAME']
+          if expected != actual:
+              raise SystemExit(f'tag {actual} does not match APS_CLI version {expected}')
+      - name: Build release assets
+        run: python scripts/build_release.py
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/APS_CLI_*.zip
+            dist/APS_CLI_*.sha256
+          generate_release_notes: true

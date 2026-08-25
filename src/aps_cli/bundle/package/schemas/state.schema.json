@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.ai-project-standard/state.schema.json",
+  "title": "AI Project Standard Runtime State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "standard_version", "revision", "cycle", "stage", "stage_type", "stage_status", "gate_status", "blockers", "pending_decision_refs", "active_change_refs", "major_risk_refs"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "standard_version": {"type": "string", "pattern": "^1\\.0\\."},
+    "revision": {"type": "integer", "minimum": 1},
+    "cycle": {"type": "string", "pattern": "^CYCLE-[0-9]{3,}$"},
+    "stage": {"type": "integer", "minimum": 1, "maximum": 23},
+    "stage_type": {"enum": ["GATED", "EXECUTION_LOOP", "OBSERVATION_LOOP", "ROUTER"]},
+    "stage_status": {"enum": ["ACTIVE", "BLOCKED", "COMPLETE"]},
+    "gate_status": {"type": ["string", "null"], "enum": ["PENDING", "PASS", "REVISE", "HOLD", "STOP", null]},
+    "current_goal": {"type": "string"},
+    "scope_ref": {"type": ["string", "null"]},
+    "blockers": {"type": "array", "items": {"type": "object"}},
+    "pending_decision_refs": {"type": "array", "items": {"type": "string", "pattern": "^DEC-"}},
+    "active_change_refs": {"type": "array", "items": {"type": "string", "pattern": "^CHANGE-"}},
+    "major_risk_refs": {"type": "array", "items": {"type": "string", "pattern": "^RISK-"}},
+    "next_action": {},
+    "updated_at": {"type": ["string", "null"]},
+    "updated_by": {"type": "string"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"stage_type": {"const": "GATED"}}},
+      "then": {"properties": {"gate_status": {"enum": ["PENDING", "PASS", "REVISE", "HOLD", "STOP"]}}},
+      "else": {"properties": {"gate_status": {"type": "null"}}}
+    }
+  ]
+}

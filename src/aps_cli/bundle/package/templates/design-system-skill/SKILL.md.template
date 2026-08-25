@@ -1,0 +1,34 @@
+---
+name: design-system
+description: >
+  Use for frontend UI design, implementation, modification, responsive layout,
+  component or pattern work, interaction design, motion, and design-system tasks
+  in this repository. Resolve current design sources before creating new UI.
+metadata:
+  version: "0.1.0"
+  lifecycle_status: "DRAFT"
+---
+
+# Design System Skill
+
+This template is NOT active by installation alone. Instantiate it under the current Host's project-level Skill discovery path only after the project Design System sources exist and the Skill passes validation/evals.
+
+## Sources
+Resolve from `.ai/registry.yaml`:
+- Visual DNA
+- Design System rules
+- Token source
+- Component source
+- Pattern source
+- Motion source
+- Visual references
+
+## Procedure
+1. Load only task-relevant design sources.
+2. Reuse → Compose → Extend → Create.
+3. Do not introduce unregistered visual values or duplicate existing system capability.
+4. Implement required states and responsive behavior.
+5. Run visual, interaction, accessibility, responsive, and design-system consistency checks.
+
+## Evolution
+Changes require a failure signal or approved design-system change, a regression/eval case, validation, and activation through the project Skill lifecycle.
