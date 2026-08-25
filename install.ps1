@@ -9,10 +9,16 @@ if ($Repo -notmatch '^[^/]+/[^/]+$') {
     throw "APS installer is not configured. Pass -Repo owner/repo or run scripts/configure_repository.py before publishing."
 }
 
-$python = Get-Command python -ErrorAction SilentlyContinue
-if (-not $python) { $python = Get-Command py -ErrorAction SilentlyContinue }
-if (-not $python) { throw "Python 3 is required." }
-$pythonExe = $python.Source
+$python = Get-Command py -ErrorAction SilentlyContinue
+$pythonArgs = @()
+if ($python) {
+    $pythonExe = $python.Source
+    $pythonArgs = @("-3")
+} else {
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $python) { throw "Python 3 is required." }
+    $pythonExe = $python.Source
+}
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("aps-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tmp | Out-Null
@@ -43,7 +49,7 @@ try {
     Expand-Archive -LiteralPath $asset -DestinationPath $extract -Force
     $installer = Get-ChildItem -Path $extract -Filter install_cli.py -Recurse | Sort-Object { $_.FullName.Split([IO.Path]::DirectorySeparatorChar).Count } | Select-Object -First 1
     if (-not $installer) { throw "install_cli.py not found in downloaded archive." }
-    $argsList = @($installer.FullName)
+    $argsList = @($pythonArgs) + @($installer.FullName)
     if ($Prefix) { $argsList += @("--prefix", $Prefix) }
     & $pythonExe @argsList
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
