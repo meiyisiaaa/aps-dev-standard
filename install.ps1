@@ -32,6 +32,7 @@ try {
             $tag = $release.tag_name
         } catch { $tag = "" }
     } else { $tag = $Version }
+    if ($tag -and $tag -notmatch '^v') { $tag = "v$tag" }
 
     if ($tag) {
         $normalized = $tag.TrimStart("v")
