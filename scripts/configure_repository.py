@@ -6,6 +6,10 @@ from pathlib import Path
 TOKEN = "__APS_REPOSITORY__"
 FILES = ("install.sh", "install.ps1", "README.md", "QUICKSTART_中文.txt")
 
+def write_utf8(path: Path, text: str) -> None:
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Bind APS distribution files to a GitHub owner/repo.")
     ap.add_argument("repository", help="GitHub repository in owner/repo form")
@@ -21,7 +25,7 @@ def main() -> int:
             continue
         text = p.read_text(encoding="utf-8")
         if TOKEN in text:
-            p.write_text(text.replace(TOKEN, repo), encoding="utf-8")
+            write_utf8(p, text.replace(TOKEN, repo))
             changed += 1
     print(f"Configured {changed} file(s) for {repo}")
     return 0
