@@ -7,6 +7,7 @@ import os
 import shutil
 import site
 import sys
+import uuid
 from pathlib import Path
 
 
@@ -24,6 +25,35 @@ def read_version(path: Path) -> str:
     raise RuntimeError("APS_CLI version not found in VERSION")
 
 
+def remove_path(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def promote_directory(staged: Path, target: Path) -> None:
+    backup = target.parent / f".{target.name}.backup-{uuid.uuid4().hex}"
+    had_target = target.exists() or target.is_symlink()
+    moved_target = False
+    completed = False
+    try:
+        if had_target:
+            target.replace(backup)
+            moved_target = True
+        staged.replace(target)
+        completed = True
+    except Exception:
+        if moved_target and (target.exists() or target.is_symlink()):
+            remove_path(target)
+        if moved_target and (backup.exists() or backup.is_symlink()):
+            backup.replace(target)
+        raise
+    finally:
+        if completed and (backup.exists() or backup.is_symlink()):
+            remove_path(backup)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Install APS CLI without pip")
     ap.add_argument("--prefix", type=Path, default=default_prefix(), help="installation prefix")
@@ -37,20 +67,23 @@ def main() -> int:
     current_root = app_root / "current"
     bin_dir = prefix / ("Scripts" if os.name == "nt" else "bin")
 
-    if version_root.exists():
-        shutil.rmtree(version_root)
-    version_root.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src_root / "aps.py", version_root / "aps.py")
-    shutil.copytree(src_root / "src" / "aps_cli", version_root / "src" / "aps_cli")
-    shutil.copy2(src_root / "VERSION", version_root / "VERSION")
+    app_root.mkdir(parents=True, exist_ok=True)
+    staged_version = app_root / f".{version}.staging-{uuid.uuid4().hex}"
+    staged_current = app_root / f".current.staging-{uuid.uuid4().hex}"
+    try:
+        staged_version.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src_root / "aps.py", staged_version / "aps.py")
+        shutil.copytree(src_root / "src" / "aps_cli", staged_version / "src" / "aps_cli")
+        shutil.copy2(src_root / "VERSION", staged_version / "VERSION")
+        promote_directory(staged_version, version_root)
 
-    if current_root.exists() or current_root.is_symlink():
-        if current_root.is_dir() and not current_root.is_symlink():
-            shutil.rmtree(current_root)
-        else:
-            current_root.unlink()
-    # Copy instead of symlink for Windows and restricted environments.
-    shutil.copytree(version_root, current_root)
+        # Copy instead of symlink for Windows and restricted environments.
+        shutil.copytree(version_root, staged_current)
+        promote_directory(staged_current, current_root)
+    finally:
+        for temporary in (staged_version, staged_current):
+            if temporary.exists() or temporary.is_symlink():
+                remove_path(temporary)
 
     bin_dir.mkdir(parents=True, exist_ok=True)
     python = Path(sys.executable).resolve()
@@ -75,6 +108,8 @@ def main() -> int:
         print("\nPATH note:")
         if os.name == "nt":
             print(f"Add this directory to PATH: {bin_dir}")
+            print(f'Current PowerShell session: $env:Path += "{bin_dir}"')
+            print("Open a new terminal after adding it permanently.")
             print(f"Until then run: {launcher}")
         else:
             print(f'Add this to your shell profile: export PATH="{bin_dir}:$PATH"')

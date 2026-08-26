@@ -23,6 +23,16 @@ def run_python(*args: str, cwd: Path = ROOT) -> None:
     run([sys.executable, *args], cwd=cwd)
 
 
+def run_python_capture(*args: str, cwd: Path = ROOT) -> str:
+    command = [sys.executable, *args]
+    print("+", " ".join(command))
+    result = subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    print(result.stdout, end="")
+    if result.returncode:
+        raise SystemExit(result.returncode)
+    return result.stdout
+
+
 def run_python_expect_failure(*args: str, cwd: Path = ROOT) -> None:
     command = [sys.executable, *args]
     print("+", " ".join(command))
@@ -128,6 +138,9 @@ def main() -> int:
         )
         run_python("aps.py", "decision", "request", str(decision_path), str(project))
         run_python("aps.py", "decision", "list", str(project))
+        status_output = run_python_capture("aps.py", "status", str(project))
+        if "Pending decisions: DEC-001" not in status_output:
+            raise SystemExit("status did not show the pending decision")
         run_python("aps.py", "decision", "show", "DEC-001", str(project))
         run_python("aps.py", "decision", "answer", "DEC-001", "B", str(project), "--reason", "长期控制更适合当前目标")
         run_python("aps.py", "decision", "show", "DEC-001", str(project))
@@ -167,10 +180,66 @@ def main() -> int:
             encoding="utf-8",
         )
         run_python("aps.py", "decision", "request", str(multi_path), str(project))
+        handoff_output = run_python_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
+        if "Current APS handoff:" not in handoff_output or "Pending decisions: DEC-002" not in handoff_output:
+            raise SystemExit("resume handoff did not include the pending decision")
         run_python("aps.py", "decision", "answer", "DEC-002", "A,C", str(project))
         decisions = (project / ".ai" / "decisions.md").read_text(encoding="utf-8")
         if "## DEC-002" not in decisions or "Decision: A, C" not in decisions:
             raise SystemExit("multi-select decision answer was not recorded")
+
+        cancel_path = decision_dir / "DEC-003.json"
+        cancel_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "id": "DEC-003",
+                    "status": "PENDING",
+                    "cycle": "CYCLE-002",
+                    "stage": 1,
+                    "input_type": "approval",
+                    "question": "是否继续该实验",
+                    "why_now": "实验方向已被范围调整取代",
+                    "options": [{"id": "YES", "title": "继续"}, {"id": "NO", "title": "停止"}],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        run_python("aps.py", "decision", "request", str(cancel_path), str(project))
+        run_python("aps.py", "decision", "cancel", "DEC-003", str(project), "--reason", "实验已被范围调整取代")
+        if json.loads(cancel_path.read_text(encoding="utf-8"))["status"] != "CANCELLED":
+            raise SystemExit("decision cancel did not close the request")
+        decisions = (project / ".ai" / "decisions.md").read_text(encoding="utf-8")
+        if "## DEC-003" not in decisions or "Decision: CANCELLED" not in decisions:
+            raise SystemExit("cancelled decision was not written to the decision log")
+
+        research_dir = project / ".ai" / "cycles" / "CYCLE-002" / "stages" / "02-market-research"
+        research_dir.mkdir(parents=True)
+        research_path = research_dir / "02_MARKET_RESEARCH.md"
+        research_path.write_text(
+            """# Market Research
+
+## Research Brief
+
+研究问题 / 范围：验证目标用户是否有持续需求。
+方法与来源（含日期）：用户评论和访谈，2026-08-26。
+关键发现：问题高频且当前替代成本高。
+结论 / 建议：先验证细分场景。
+未确定项：付费意愿仍需验证。
+待决策项：是否进入该细分市场。
+
+## Evidence
+
+- Source: sample evidence
+""",
+            encoding="utf-8",
+        )
+        brief_output = run_python_capture("aps.py", "research", "brief", str(research_path), str(project))
+        if "Research Brief:" not in brief_output or "结论 / 建议" not in brief_output:
+            raise SystemExit("research brief was not rendered")
         run_python("aps.py", "doctor", str(project), "--host", "generic")
 
         before_upgrade = snapshot_files(project)

@@ -50,6 +50,7 @@
     "selected_option_ids": {"type": "array", "items": {"type": "string"}},
     "answer": {"type": "string"},
     "reason": {"type": "string"},
-    "resolved_at": {"type": ["string", "null"]}
+    "resolved_at": {"type": ["string", "null"]},
+    "cancelled_at": {"type": ["string", "null"]}
   }
 }

@@ -8,7 +8,10 @@ After creating a GitHub repository, bind the distribution files to it:
 
 ```bash
 python scripts/configure_repository.py OWNER/REPO
-git add .
+git status --short
+# Review the changed paths, then stage only the files intended for release.
+git add -- <reviewed-files>
+git diff --cached --check
 git commit -m "Configure APS distribution"
 git push
 ```
@@ -59,6 +62,7 @@ aps rebaseline --confirm
 aps doctor
 aps status
 aps upgrade
+aps research brief .ai/cycles/CYCLE-001/stages/02-market-research/02_MARKET_RESEARCH.md
 ```
 
 Command boundaries are deliberate: `init` is for a new project, `resume` adopts an existing project once and is read-only after a valid Standard manifest exists, and `upgrade` is the only normal command that updates installed Standard files. `rebaseline` requires initialized runtime state and explicit confirmation; an incomplete non-initial Cycle must be resumed before another one is created:
@@ -82,6 +86,14 @@ aps decision answer DEC-001 A
 ```
 
 Use `aps decision list` and `aps decision show DEC-001` to inspect pending requests. A selected option does not pass a Gate automatically; complete the required Artifact and Validation first.
+
+If the request is no longer needed, close it explicitly:
+
+```bash
+aps decision cancel DEC-001 --reason "scope changed"
+```
+
+After switching conversations, run `aps status` or `aps resume --no-launch` to print the current Cycle, blockers, pending decisions, and next action. For Market / Product Research, keep the full report in the Stage Artifact and expose the user-facing summary with `aps research brief <ARTIFACT>`.
 
 ## Temporary use before repository configuration
 

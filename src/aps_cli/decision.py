@@ -211,6 +211,12 @@ def _load_state(root: Path) -> tuple[Path, dict[str, Any]]:
     return path, data
 
 
+def load_runtime_state(project: Path) -> dict[str, Any]:
+    root = _root(project)
+    _, data = _load_state(root)
+    return data
+
+
 @contextmanager
 def _decision_lock(root: Path) -> Iterator[None]:
     path = root / ".ai" / ".decision.lock"
@@ -365,6 +371,7 @@ def register_request(project: Path, request_file: Path) -> int:
         _bump_state(state, "aps-decision")
         _save_state(state_path, state)
     print(f"OK    decision pending: {request['id']}")
+    print(f"NEXT  Plan mode: use Codex native input; otherwise answer in conversation, then run `aps decision answer {request['id']} <ANSWER>`. ")
     return 0
 
 
@@ -460,6 +467,40 @@ def answer_request(project: Path, ref: str, answer: str, reason: str = "") -> in
         _bump_state(state, "aps-decision")
         _save_state(state_path, state)
     print(f"OK    decision recorded: {ref} = {display}")
+    return 0
+
+
+def cancel_request(project: Path, ref: str, reason: str = "") -> int:
+    root = _root(project)
+    request_path = _find_request(root, ref)
+    log_path = root / ".ai" / "decisions.md"
+    with _decision_lock(root):
+        request = _read_request(request_path)
+        state_path, state = _load_state(root)
+        pending = [item for item in state["pending_decision_refs"] if isinstance(item, str)]
+        if ref not in pending:
+            raise DecisionError(f"decision is not pending in state.yaml: {ref}")
+
+        date = _now()
+        cancellation_reason = reason.strip() or "用户取消该决策请求"
+        if not _decision_exists(log_path, ref):
+            old = log_path.read_text(encoding="utf-8") if log_path.is_file() else ""
+            separator = "\n" if old.endswith("\n") else "\n\n"
+            entry = _decision_entry(request, [], "CANCELLED", cancellation_reason, date)
+            atomic_write(log_path, (old + separator + entry).encode("utf-8"))
+
+        request["status"] = "CANCELLED"
+        request["reason"] = cancellation_reason
+        request["cancelled_at"] = date
+        atomic_write(request_path, (json.dumps(request, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+
+        state["pending_decision_refs"] = [item for item in pending if item != ref]
+        state["blockers"] = [item for item in state["blockers"] if _blocker_ref(item) != ref]
+        if state["stage_type"] != "GATED" and not state["blockers"]:
+            state["stage_status"] = "ACTIVE"
+        _bump_state(state, "aps-decision")
+        _save_state(state_path, state)
+    print(f"OK    decision cancelled: {ref}")
     return 0
 
 

@@ -919,7 +919,7 @@ Market Research / Product Research 完成后，必须在当前对话输出 Resea
 待决策项
 ```
 
-对话中的 Brief 用于让用户及时看见结果；完整报告和证据仍以 Stage Artifact 为准。不得只落盘而静默结束，也不得为了省上下文省略关键结论、证据边界或待决策项。
+对话中的 Brief 用于让用户及时看见结果；CLI 可用时运行 `aps research brief <ARTIFACT>` 输出当前摘要。完整报告和证据仍以 Stage Artifact 为准。不得只落盘而静默结束，也不得为了省上下文省略关键结论、证据边界或待决策项。
 
 ---
 

@@ -9,8 +9,9 @@ import sys
 from pathlib import Path
 
 from . import __version__, STANDARD_VERSION
-from .decision import answer_request, list_requests, register_request, show_request
+from .decision import DecisionError, answer_request, cancel_request, list_requests, load_runtime_state, register_request, show_request
 from .installer import BEGIN_AGENTS, BEGIN_GITIGNORE, END_AGENTS, END_GITIGNORE, install_standard
+from .research import render_brief
 
 HOSTS = ("codex", "generic")
 
@@ -138,25 +139,71 @@ def ensure_git(root: Path, enabled: bool = True) -> None:
         print("WARN  git init failed")
 
 
-def handoff_prompt(mode: str) -> str:
+def _runtime_summary(root: Path) -> list[str]:
+    try:
+        state = load_runtime_state(root)
+    except DecisionError as exc:
+        return [f"Runtime state invalid: {exc}"]
+
+    lines = [
+        f"Cycle: {state.get('cycle', 'unknown')}",
+        f"Stage: {state.get('stage', 'unknown')} / {state.get('stage_type', 'unknown')}",
+        f"Status: {state.get('stage_status', 'unknown')}",
+    ]
+    gate = state.get("gate_status")
+    if gate not in (None, "null"):
+        lines.append(f"Gate: {gate}")
+    goal = state.get("current_goal")
+    if isinstance(goal, str) and goal.strip():
+        lines.append(f"Goal: {goal.strip()}")
+    pending = [ref for ref in state.get("pending_decision_refs", []) if isinstance(ref, str)]
+    if pending:
+        lines.append(f"Pending decisions: {', '.join(pending)}")
+    blockers = state.get("blockers", [])
+    for blocker in blockers:
+        if isinstance(blocker, dict):
+            kind = str(blocker.get("type") or "blocker")
+            ref = str(blocker.get("ref") or "")
+            detail = str(blocker.get("reason") or blocker.get("message") or "")
+            suffix = " ".join(part for part in (ref, detail) if part)
+            lines.append(f"Blocker: {kind}{(' ' + suffix) if suffix else ''}")
+        elif blocker:
+            lines.append(f"Blocker: {blocker}")
+    next_action = state.get("next_action")
+    if next_action not in (None, "", "null"):
+        if isinstance(next_action, str):
+            rendered = next_action
+        else:
+            rendered = json.dumps(next_action, ensure_ascii=False)
+        lines.append(f"Next action: {rendered}")
+    return lines
+
+
+def handoff_prompt(mode: str, root: Path | None = None) -> str:
     if mode == "init":
-        return (
+        prompt = (
             "Read `.ai/bootstrap/bootstrap-prompt.txt` and execute it. "
             "Treat this as a new project, initialize the runtime governance state, start Stage 01, "
             "and stop at the first required Gate or user decision."
         )
-    if mode == "resume":
-        return (
+    elif mode == "resume":
+        prompt = (
             "Read `.ai/bootstrap/bootstrap-prompt.txt` and execute it. "
             "Resume this existing project from its actual current state; do not rebaseline it unless explicitly required by the Standard."
         )
-    if mode == "rebaseline":
-        return (
+    elif mode == "rebaseline":
+        prompt = (
             "Read `.ai/bootstrap/bootstrap-prompt.txt` and execute it first. "
             "Then read `.ai/bootstrap/rebaseline-existing-project.txt` and execute it. "
             "Create the new rebaseline Cycle and begin Stage 01; do not run the full lifecycle in one turn."
         )
-    raise ValueError(mode)
+    else:
+        raise ValueError(mode)
+    if root is not None and mode in {"resume", "rebaseline"}:
+        summary = _runtime_summary(root)
+        if summary:
+            prompt += "\n\nCurrent APS handoff:\n" + "\n".join(summary)
+    return prompt
 
 
 def launch_host(root: Path, host: str, prompt: str, no_launch: bool) -> int:
@@ -207,7 +254,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     root.mkdir(parents=True, exist_ok=True)
     ensure_git(root, enabled=not args.no_git)
     install(root, args.host, args.force_managed)
-    rc = launch_host(root, args.host, handoff_prompt("init"), args.no_launch)
+    rc = launch_host(root, args.host, handoff_prompt("init", root), args.no_launch)
     if rc != 0:
         return rc
     if args.no_launch:
@@ -249,7 +296,7 @@ def cmd_resume(args: argparse.Namespace) -> int:
                 print(f"  - {item}")
             print("Run `aps upgrade` explicitly after reviewing the project state.")
             return 2
-        return launch_host(root, args.host, handoff_prompt("resume"), args.no_launch)
+        return launch_host(root, args.host, handoff_prompt("resume", root), args.no_launch)
     if has_aps_artifacts(root):
         print("REFUSE  partial APS installation detected without a valid manifest.")
         print("Review the directory before using `aps upgrade` to repair it.")
@@ -259,7 +306,7 @@ def cmd_resume(args: argparse.Namespace) -> int:
         return 2
     print("Adopting existing project into APS; future `aps resume` operations are read-only.")
     install(root, args.host, force_managed=False)
-    return launch_host(root, args.host, handoff_prompt("resume"), args.no_launch)
+    return launch_host(root, args.host, handoff_prompt("resume", root), args.no_launch)
 
 
 def cmd_rebaseline(args: argparse.Namespace) -> int:
@@ -293,7 +340,7 @@ def cmd_rebaseline(args: argparse.Namespace) -> int:
     if missing:
         print("REFUSE  installed Standard files are missing or invalid; run `aps upgrade` first.")
         return 2
-    return launch_host(root, args.host, handoff_prompt("rebaseline"), args.no_launch)
+    return launch_host(root, args.host, handoff_prompt("rebaseline", root), args.no_launch)
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -342,11 +389,8 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"Managed conflicts: {len(conflicts)}")
     print(f"Runtime state: {'present' if state.is_file() else 'not initialized'}")
     if state.is_file():
-        text = state.read_text(encoding="utf-8", errors="replace")
-        wanted = ("cycle:", "stage:", "stage_type:", "stage_status:", "gate_status:")
-        for line in text.splitlines():
-            if line.lstrip().startswith(wanted):
-                print("  " + line.strip())
+        for line in _runtime_summary(root):
+            print("  " + line)
     return 0
 
 
@@ -364,6 +408,14 @@ def cmd_decision_show(args: argparse.Namespace) -> int:
 
 def cmd_decision_answer(args: argparse.Namespace) -> int:
     return answer_request(args.project, args.reference, args.answer, args.reason)
+
+
+def cmd_decision_cancel(args: argparse.Namespace) -> int:
+    return cancel_request(args.project, args.reference, args.reason)
+
+
+def cmd_research_brief(args: argparse.Namespace) -> int:
+    return render_brief(args.project, args.artifact)
 
 
 def interactive_menu() -> int:
@@ -472,6 +524,19 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("project", nargs="?", default=".", type=Path)
     d.add_argument("--reason", default="", help="optional reason recorded with the decision")
     d.set_defaults(func=cmd_decision_answer)
+
+    d = decision_sub.add_parser("cancel", help="cancel a pending Decision Request")
+    d.add_argument("reference")
+    d.add_argument("project", nargs="?", default=".", type=Path)
+    d.add_argument("--reason", default="", help="optional cancellation reason")
+    d.set_defaults(func=cmd_decision_cancel)
+
+    s = sub.add_parser("research", help="render validated research outputs")
+    research_sub = s.add_subparsers(dest="research_command", required=True)
+    d = research_sub.add_parser("brief", help="render the Research Brief section from a Stage Artifact")
+    d.add_argument("artifact", type=Path)
+    d.add_argument("project", nargs="?", default=".", type=Path)
+    d.set_defaults(func=cmd_research_brief)
     return p
 
 

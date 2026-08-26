@@ -5,7 +5,10 @@ APS 一键安装
 
 python scripts/configure_repository.py OWNER/REPO
 
-git add .
+git status --short
+# 检查变更后，只暂存本次发布文件：
+git add -- <已审查文件>
+git diff --cached --check
 git commit -m "Configure APS distribution"
 git push
 
@@ -34,6 +37,7 @@ aps rebaseline  旧项目从 Stage 01 重新审查（需运行状态和 --confir
 aps doctor      项目体检
 aps status      查看状态
 aps upgrade     升级 Standard
+aps research brief <调研 Artifact>  输出 Research Brief
 
 需要重大产品、技术、UX 或 Scope 决策时：
 
@@ -46,8 +50,13 @@ Codex Plan 模式优先使用原生决策输入。完整候选项保留在 Decis
 aps decision answer DEC-001 A
 aps decision list
 aps decision show DEC-001
+aps decision cancel DEC-001 --reason "范围已调整"
 
 用户选择不等于 Gate 通过，仍需完成 Artifact 和 Validation。
+
+切换对话后运行 `aps status` 或 `aps resume --no-launch`，查看当前 Cycle、阻塞项、待决策和下一步。
+
+市场 / 产品调研完成后，使用 `aps research brief <调研 Artifact>` 在当前对话输出摘要；完整报告仍保留在 Stage Artifact。
 
 保护规则：
 - 不要重复执行 init；已有 APS 文件时会拒绝。
