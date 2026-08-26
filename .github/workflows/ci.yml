@@ -17,5 +17,7 @@ jobs:
           python-version: '3.x'
       - name: CLI help
         run: python aps.py --help
-      - name: Build release package
-        run: python scripts/build_release.py
+      - name: Standards lint
+        run: python src/aps_cli/bundle/package/tools/standards-lint.py
+      - name: Install and release smoke test
+        run: python scripts/smoke_test.py

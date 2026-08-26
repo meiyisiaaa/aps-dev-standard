@@ -20,10 +20,25 @@ if ($python) {
     $pythonExe = $python.Source
 }
 
+function Test-ReleaseChecksum {
+    param(
+        [Parameter(Mandatory=$true)][string]$AssetPath,
+        [Parameter(Mandatory=$true)][string]$ChecksumPath
+    )
+    $line = Get-Content -LiteralPath $ChecksumPath | Where-Object { $_.Trim() } | Select-Object -First 1
+    $match = [regex]::Match($line, '^\s*([0-9a-fA-F]{64})\s+\S+\s*$')
+    if (-not $match.Success) { throw "Invalid SHA-256 sidecar." }
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $AssetPath).Hash
+    if (-not $actual.Equals($match.Groups[1].Value, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Release SHA-256 mismatch."
+    }
+}
+
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("aps-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
     $asset = Join-Path $tmp "aps.zip"
+    $checksum = Join-Path $tmp "aps.zip.sha256"
     $downloaded = $false
     $tag = ""
     if ($Version -eq "latest") {
@@ -39,11 +54,22 @@ try {
         $url = "https://github.com/$Repo/releases/download/$tag/APS_CLI_$normalized.zip"
         try {
             Invoke-WebRequest -Headers @{"User-Agent"="aps-installer"} -Uri $url -OutFile $asset
-            $downloaded = $true
         } catch { $downloaded = $false }
+        if (Test-Path -LiteralPath $asset) {
+            try {
+                Invoke-WebRequest -Headers @{"User-Agent"="aps-installer"} -Uri "$url.sha256" -OutFile $checksum
+                Test-ReleaseChecksum -AssetPath $asset -ChecksumPath $checksum
+                $downloaded = $true
+            } catch {
+                throw "Release asset verification failed: $($_.Exception.Message)"
+            }
+        }
     }
     if (-not $downloaded) {
-        Write-Host "Release asset unavailable; falling back to main branch source archive."
+        if ($env:APS_ALLOW_MAIN_FALLBACK -ne "1") {
+            throw "No verified release asset is available. Set APS_ALLOW_MAIN_FALLBACK=1 to use the mutable main branch explicitly."
+        }
+        Write-Host "No verified release asset; explicitly using the mutable main branch source archive."
         Invoke-WebRequest -Headers @{"User-Agent"="aps-installer"} -Uri "https://github.com/$Repo/archive/refs/heads/main.zip" -OutFile $asset
     }
     $extract = Join-Path $tmp "extract"

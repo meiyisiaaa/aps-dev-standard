@@ -8,6 +8,7 @@ Codex project runtime.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -68,15 +69,21 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
     if not life or not art or not boot:
         return
 
-    for name, text in [("lifecycle", life), ("artifact", art)]:
-        if re.search(r"\*\*Standard Version:\*\* `1\.0\.0`", text):
-            report.pass_(f"{name} standard version = 1.0.0")
-        else:
-            report.error(f"{name} standard does not declare version 1.0.0")
-        if text.count("```") % 2 == 0:
-            report.pass_(f"{name} markdown code fences are balanced")
-        else:
-            report.error(f"{name} markdown code fences are unbalanced")
+    lifecycle_version = re.search(r"\*\*Standard Version:\*\* `([^`]+)`", life)
+    if not lifecycle_version:
+        report.error("lifecycle standard version is missing")
+    else:
+        expected_version = lifecycle_version.group(1)
+        for name, text in [("lifecycle", life), ("artifact", art)]:
+            declared = re.search(r"\*\*Standard Version:\*\* `([^`]+)`", text)
+            if declared and declared.group(1) == expected_version:
+                report.pass_(f"{name} standard version = {expected_version}")
+            else:
+                report.error(f"{name} standard version does not match {expected_version}")
+            if text.count("```") % 2 == 0:
+                report.pass_(f"{name} markdown code fences are balanced")
+            else:
+                report.error(f"{name} markdown code fences are unbalanced")
 
     # Stage 01..23: only top-level numbered lifecycle stages, excluding standards sections 24+.
     stages = [int(n) for n in re.findall(r"(?m)^# (\d{1,2})\. ", life) if 1 <= int(n) <= 23]
@@ -270,11 +277,31 @@ def scan_skills(root: Path, cwd: Path) -> dict[str, list[tuple[str, Path]]]:
 
 def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -> None:
     root = find_repo_root(project_root)
-    for p in [root / "AGENTS.md", root / ".ai" / "state.yaml", root / ".ai" / "decisions.md", root / ".ai" / "registry.yaml"]:
+    required_files = [
+        root / "AGENTS.md",
+        root / ".ai" / "state.yaml",
+        root / ".ai" / "decisions.md",
+        root / ".ai" / "registry.yaml",
+        root / ".ai" / "schemas" / "state.schema.json",
+        root / ".ai" / "schemas" / "registry.schema.json",
+    ]
+    for p in required_files:
         if p.exists():
             report.pass_(f"project runtime source exists: {p.relative_to(root)}")
         else:
             report.error(f"missing project runtime source: {p.relative_to(root)}")
+
+    for p in [root / ".ai" / "schemas" / "state.schema.json", root / ".ai" / "schemas" / "registry.schema.json"]:
+        if not p.is_file():
+            continue
+        try:
+            schema = json.loads(p.read_text(encoding="utf-8"))
+            if not isinstance(schema, dict) or schema.get("type") != "object" or not isinstance(schema.get("required"), list):
+                report.error(f"invalid object schema structure: {p.relative_to(root)}")
+            else:
+                report.pass_(f"JSON schema parses: {p.relative_to(root)}")
+        except (OSError, json.JSONDecodeError) as exc:
+            report.error(f"cannot parse JSON schema {p.relative_to(root)}: {exc}")
 
     state = root / ".ai" / "state.yaml"
     if state.is_file():

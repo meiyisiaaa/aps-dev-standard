@@ -9,13 +9,19 @@ import site
 import sys
 from pathlib import Path
 
-VERSION = "1.0.0"
-
 
 def default_prefix() -> Path:
     if os.name == "nt":
         return Path(site.USER_BASE)
     return Path.home() / ".local"
+
+
+def read_version(path: Path) -> str:
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key.strip() == "APS_CLI" and value.strip():
+            return value.strip()
+    raise RuntimeError("APS_CLI version not found in VERSION")
 
 
 def main() -> int:
@@ -24,9 +30,10 @@ def main() -> int:
     args = ap.parse_args()
 
     src_root = Path(__file__).resolve().parent
+    version = read_version(src_root / "VERSION")
     prefix = args.prefix.expanduser().resolve()
     app_root = prefix / ("share" if os.name != "nt" else "share") / "aps-cli"
-    version_root = app_root / VERSION
+    version_root = app_root / version
     current_root = app_root / "current"
     bin_dir = prefix / ("Scripts" if os.name == "nt" else "bin")
 
@@ -61,7 +68,7 @@ def main() -> int:
         )
         launcher.chmod(0o755)
 
-    print(f"Installed APS CLI {VERSION}")
+    print(f"Installed APS CLI {version}")
     print(f"Launcher: {launcher}")
     path_parts = os.environ.get("PATH", "").split(os.pathsep)
     if str(bin_dir) not in path_parts:

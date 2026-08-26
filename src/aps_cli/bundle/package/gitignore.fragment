@@ -1,9 +1,11 @@
 # Local/runtime-only AI Project Standard data
 .ai/runtime/hosts/
+.ai/.install.lock
 .ai/cache/
 .ai/logs/
 .ai/incoming/
 .ai/archive/install-backups/
 .ai/cycles/*/evidence/tmp/
 .ai/**/__pycache__/
+.ai/**/*.tmp
 *.pyc

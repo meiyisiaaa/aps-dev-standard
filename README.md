@@ -20,7 +20,14 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
+When changing files under `src/aps_cli/bundle/package/`, refresh their manifest checksums before committing:
+
+```bash
+python scripts/build_release.py --refresh-manifest
+```
+
 GitHub Actions builds `APS_CLI_1.0.0.zip` and its SHA-256 file and attaches them to the Release.
+The online installers verify that SHA-256 file and fail closed when no verified Release asset is available.
 
 ## One-line install
 
@@ -68,6 +75,18 @@ PowerShell:
 
 ```powershell
 $env:APS_REPO='OWNER/REPO'; irm https://raw.githubusercontent.com/OWNER/REPO/main/install.ps1 | iex
+```
+
+For temporary source-archive use when no Release exists, explicitly opt in:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | APS_REPO=OWNER/REPO APS_ALLOW_MAIN_FALLBACK=1 sh
+```
+
+PowerShell:
+
+```powershell
+$env:APS_REPO='OWNER/REPO'; $env:APS_ALLOW_MAIN_FALLBACK='1'; irm https://raw.githubusercontent.com/OWNER/REPO/main/install.ps1 | iex
 ```
 
 ## Project footprint

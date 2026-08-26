@@ -21,19 +21,19 @@
   "payload_sha256": {
     "bootstrap/bootstrap-prompt.txt": "c5a89a50a4e6f9e919f4042e4bd64ab87b5a39416dfbdc276170f21efcb52cbe",
     "bootstrap/rebaseline-existing-project.txt": "146c4e399d773310088a8317f89062461463516253f3b8396e20237ec2a524b7",
-    "gitignore.fragment": "11ca1c8b6c0e6fdb8c578ec253b27aaefa1b655db23f9c4c7f4904a247a408d8",
+    "gitignore.fragment": "7df5c478c5462edfdef1a45910c16b6ffe76f41f8be94ac442e91c42d866f6b5",
     "schemas/registry.schema.json": "22f3fc2fcc7da5acb4f6de70a28f7f7f6497e48d54c285b62393b192299a0550",
     "schemas/state.schema.json": "a45c747b8ec8af21d3c495c0549b0f47f66719ffb62d55349bd1574d1be04d0f",
     "standards/artifact-state.md": "1e4f037adc193b43906fa1351a06e6ade54356f10b2b110311474ed6c5f84458",
     "standards/lifecycle.md": "9a44d62b4671df26d6d227e0f58fb505b94cd8e0a8c0e4e7a2cb06cd74a738c3",
     "templates/AGENTS.block.md": "c2300a8a3820ad19b7f4e7607674dc400ea5ab8b1943e29127fa5a445d1d9107",
     "templates/decisions.md": "9414c3309cf6eb96b63aff195a63ed81c59805236dde3270e6f29ae51c776916",
-    "templates/design-system-skill/SKILL.md.template": "96db74ac003d543294f2cdb4e8fc5117b11c37d0acc0f5fa10085e32e27ff337",
     "templates/design-system-skill/evals/README.md": "f1f7e3efe25141a15a9d9e8bd214bf9f195bd85b16a062eaf149cdcd2958d736",
     "templates/design-system-skill/references/README.md": "afa731bf787d2833a289e599668d3a53c3f9dd2d40f254e8f99c4455c02768df",
+    "templates/design-system-skill/SKILL.md.template": "96db74ac003d543294f2cdb4e8fc5117b11c37d0acc0f5fa10085e32e27ff337",
     "templates/registry.yaml": "9c45cebf862b028bcdca379a3cad527c01c65991b6e2dcbe674292822874b9d9",
     "templates/runtime-host.yaml": "fdd07ee75851a3985f9f2c7437f18471b07a7a1eafe1ba4bba7c60ab54cafdb9",
     "templates/state.yaml": "489583a0200f7e09ca5ff147be3e0112ef28fd309c388d5c8103ac52070befdf",
-    "tools/standards-lint.py": "7112d202ea5de5b9e6f0c04d8bd830b063916a21b3ec70d82fac441ba43b2e42"
+    "tools/standards-lint.py": "7aba3e6dbc40eca9ea5b0ce60e266e153d85c9c2f9e547efe94949fbda2e7256"
   }
 }
