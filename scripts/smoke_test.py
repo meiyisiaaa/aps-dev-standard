@@ -136,7 +136,9 @@ def main() -> int:
             + "\n",
             encoding="utf-8",
         )
-        run_python("aps.py", "decision", "request", str(decision_path), str(project))
+        request_output = run_python_capture("aps.py", "decision", "request", str(decision_path), str(project))
+        if "NEXT  Answer in the current conversation" not in request_output:
+            raise SystemExit("decision request did not use the conversation handoff")
         run_python("aps.py", "decision", "list", str(project))
         status_output = run_python_capture("aps.py", "status", str(project))
         if "Pending decisions: DEC-001" not in status_output:

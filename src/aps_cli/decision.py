@@ -371,7 +371,7 @@ def register_request(project: Path, request_file: Path) -> int:
         _bump_state(state, "aps-decision")
         _save_state(state_path, state)
     print(f"OK    decision pending: {request['id']}")
-    print(f"NEXT  Plan mode: use Codex native input; otherwise answer in conversation, then run `aps decision answer {request['id']} <ANSWER>`. ")
+    print(f"NEXT  Answer in the current conversation, then run `aps decision answer {request['id']} <ANSWER>`. ")
     return 0
 
 

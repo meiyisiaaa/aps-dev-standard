@@ -79,7 +79,7 @@ When a major product, technical, UX, or scope choice is required, create a struc
 aps decision request .ai/cycles/CYCLE-001/stages/01-idea/decision-requests/DEC-001.json
 ```
 
-In Codex Plan mode, use the native user-input prompt for the current smallest question. Keep the full candidate set in the Decision Request; multi-select, ranking, free-text, numeric, and larger decisions may use staged prompts or conversation fallback. Record the answer with:
+Ask the user in the current conversation with a structured question. Keep the full candidate set in the Decision Request; multi-select, ranking, free-text, numeric, and larger decisions may use staged prompts or free-form conversation. Record the answer with:
 
 ```bash
 aps decision answer DEC-001 A

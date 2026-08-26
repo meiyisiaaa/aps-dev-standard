@@ -895,16 +895,9 @@ matrix
 
 完整候选项、证据引用、推荐项和取舍必须保留在 Decision Request 中；`.ai/state.yaml` 只保存 `user_decision` blocker 和 `pending_decision_refs`，不复制决策正文。
 
-Host 交互优先级：
+对话交互规则：
 
-```text
-Codex Plan 原生用户输入（仅限 Plan mode）
-→ Host 支持的结构化输入
-→ 对话中的结构化问题
-→ 手动 `aps decision answer`
-```
-
-Codex Plan 的一次提问可以只展示当前最小的一组单选项，但这只是 Host UI 限制，不是 APS 决策模型限制。选项超过 UI 能力时，必须分轮提问、改用自由输入或回退到对话，并保留完整候选集。
+在当前对话中提出结构化问题，并保留 Decision Request 中的完整候选项、证据、推荐项和取舍。决策交互不受 Host UI 或选项数量限制；多选、排序、自由输入、数字等类型可以分轮提问或直接接受自由文本。用户回答后运行 `aps decision answer`，解除 blocker 并递增 state revision。
 
 ### 10.2 Research Brief
 
