@@ -14,6 +14,7 @@ Execution rules:
 - Use minimal context loading. Do not eagerly load complete Standards, old Cycles, or unrelated Artifacts for normal tasks.
 - Do not bypass Gate / Transition, Change Control, Scope Control, Security Rules, or confirmed Decisions.
 - When a `user_decision` blocker is required, preserve the full Decision Request and use the current Host's native Plan input when available; do not silently reduce multi-option or non-single-select decisions.
+- After Market Research or Product Research, output a Research Brief in the current conversation and persist the full report in the Stage Artifact; do not finish silently after writing files.
 - Global governance writes use the project Single Writer / revision / compare-before-write rules.
 - For UI work, resolve the current Design System sources and project-level design Skill from the Registry. Do not assume a Skill exists or is valid until registered and verified.
 <!-- AI-PROJECT-STANDARD:END -->

@@ -906,6 +906,21 @@ Codex Plan 原生用户输入（仅限 Plan mode）
 
 Codex Plan 的一次提问可以只展示当前最小的一组单选项，但这只是 Host UI 限制，不是 APS 决策模型限制。选项超过 UI 能力时，必须分轮提问、改用自由输入或回退到对话，并保留完整候选集。
 
+### 10.2 Research Brief
+
+Market Research / Product Research 完成后，必须在当前对话输出 Research Brief，同时写入完整 Stage Artifact。Brief 至少包含：
+
+```text
+研究问题 / 范围
+方法与来源（含日期）
+关键发现
+结论 / 建议
+未确定项
+待决策项
+```
+
+对话中的 Brief 用于让用户及时看见结果；完整报告和证据仍以 Stage Artifact 为准。不得只落盘而静默结束，也不得为了省上下文省略关键结论、证据边界或待决策项。
+
 ---
 
 # 11. Change Control

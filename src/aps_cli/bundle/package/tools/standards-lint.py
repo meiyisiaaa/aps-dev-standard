@@ -176,6 +176,11 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
     else:
         report.error("bootstrap missing concurrency controls")
 
+    if "Research Brief" in life and "当前对话" in life and "禁止只写文档后静默完成" in boot:
+        report.pass_("research results require conversational delivery")
+    else:
+        report.error("research results are not required in the current conversation")
+
     if "PENDING USER DECISION" in life or "PENDING USER DECISION" in boot:
         report.error("legacy pseudo GateStatus 'PENDING USER DECISION' remains in executable standard/prompt")
 
