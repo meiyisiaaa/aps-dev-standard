@@ -335,7 +335,7 @@ Regression
 
 Market Research、Product Research，以及其他产生外部证据的 Research 完成后，MUST 双通道交付：
 
-1. 在当前对话中输出一份可读的 Research Brief，不得只写入 Artifact 后静默结束。至少包含研究问题 / 范围、方法与来源、关键发现、结论 / 建议、未确定项和待决策项；关键内容使用 `Fact`、`Inference`、`Hypothesis`、`Decision` 标记。CLI 可用时优先运行 `aps research brief <ARTIFACT>` 生成摘要。
+1. 在当前对话中先直接回答原始研究问题，再分析关键证据、推断、限制和建议，最后输出一份可读的 Research Brief，不得只写入 Artifact 后静默结束。多个问题必须逐项回答；Brief 至少包含研究问题 / 范围、方法与来源、关键发现、结论 / 建议、未确定项和待决策项；关键内容使用 `Fact`、`Inference`、`Hypothesis`、`Decision` 标记。CLI 可用时运行 `aps research brief <ARTIFACT>` 生成摘要，但不能替代直接回答和分析。
 2. 将完整报告、证据明细和来源引用落盘到对应 Stage Artifact。对话摘要不是第二个 Source of Truth；报告过长时在对话中输出摘要与 Artifact 路径，不复制全部原始材料。
 
 研究结论若触发用户决策，必须在同一对话中明确展示待决策问题，并按 Decision Request 流程登记，不得只留下文件阻塞状态。

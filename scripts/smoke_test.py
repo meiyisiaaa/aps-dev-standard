@@ -69,8 +69,9 @@ def main() -> int:
         run_python("aps.py", "init", str(project), "--host", "generic", "--no-launch", "--no-git")
         run_python("aps.py", "doctor", str(project), "--host", "generic", "--standard-only")
         bootstrap_prompt = (project / ".ai" / "bootstrap" / "bootstrap-prompt.txt").read_text(encoding="utf-8")
-        if any(marker not in bootstrap_prompt for marker in ("优点", "缺点", "适用条件", "主要风险")):
-            raise SystemExit("decision prompt does not require per-option tradeoff analysis")
+        required_prompt_markers = ("优点", "缺点", "适用条件", "主要风险", "直接回答原始研究问题", "分析关键证据")
+        if any(marker not in bootstrap_prompt for marker in required_prompt_markers):
+            raise SystemExit("bootstrap prompt does not require decision and research analysis")
 
         before_repeat = snapshot_files(project)
         run_python_expect_failure("aps.py", "init", str(project), "--host", "generic", "--no-launch", "--force-mode")

@@ -19,7 +19,7 @@ Bootstrap 顺序：
 11. 全局治理写入遵守 Single Writer、revision 与 compare-before-write；子 Agent 不直接覆盖全局治理 Artifact。
 12. 只有满足当前 Transition / Gate 条件并完成 Validation 后才推进。
 
-Market Research / Product Research 完成后，当前对话必须输出 Research Brief，至少说明范围、方法与来源、关键发现、结论 / 建议、未确定项和待决策项；完整报告仍要落盘到对应 Stage Artifact。CLI 可用时运行 `aps research brief <ARTIFACT>` 生成可直接展示的摘要。禁止只写文档后静默完成。
+Market Research / Product Research 完成后，当前对话必须先直接回答原始研究问题，再分析关键证据，最后输出 Research Brief；多个问题必须逐项回答。Brief 至少说明范围、方法与来源、关键发现、结论 / 建议、未确定项和待决策项；完整报告仍要落盘到对应 Stage Artifact。CLI 可用时运行 `aps research brief <ARTIFACT>` 生成可直接展示的摘要，但不能替代直接回答和分析。禁止只写文档后静默完成。
 
 能够通过调研、代码、已有 Artifact 或已确认 Decision 确定的问题直接处理。
 遇到关键不确定、方案冲突、重大产品 / 技术 / UI 取舍、需要改变已确认内容或扩大 Scope 时，新增 `user_decision` blocker，由我决策。

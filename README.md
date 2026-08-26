@@ -93,7 +93,7 @@ If the request is no longer needed, close it explicitly:
 aps decision cancel DEC-001 --reason "scope changed"
 ```
 
-After switching conversations, run `aps status` or `aps resume --no-launch` to print the current Cycle, blockers, pending decisions, and next action. For Market / Product Research, keep the full report in the Stage Artifact and expose the user-facing summary with `aps research brief <ARTIFACT>`.
+After switching conversations, run `aps status` or `aps resume --no-launch` to print the current Cycle, blockers, pending decisions, and next action. For Market / Product Research, answer the original question directly in the current conversation, analyze the evidence, then keep the full report in the Stage Artifact and expose the user-facing summary with `aps research brief <ARTIFACT>`.
 
 ## Temporary use before repository configuration
 
