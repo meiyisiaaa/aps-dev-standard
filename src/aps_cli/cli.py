@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from . import __version__, STANDARD_VERSION
-from .installer import install_standard
+from .installer import BEGIN_AGENTS, BEGIN_GITIGNORE, END_AGENTS, END_GITIGNORE, install_standard
 
 HOSTS = ("codex", "generic")
 
@@ -29,6 +29,56 @@ def project_has_content(root: Path) -> bool:
     return bool(entries)
 
 
+def has_aps_markers(root: Path) -> bool:
+    for path, begin, end in (
+        (root / "AGENTS.md", BEGIN_AGENTS, END_AGENTS),
+        (root / ".gitignore", BEGIN_GITIGNORE, END_GITIGNORE),
+    ):
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return True
+        if begin in text or end in text:
+            return True
+    return False
+
+
+def missing_aps_markers(root: Path) -> list[str]:
+    missing = []
+    for path, begin, end in (
+        (root / "AGENTS.md", BEGIN_AGENTS, END_AGENTS),
+        (root / ".gitignore", BEGIN_GITIGNORE, END_GITIGNORE),
+    ):
+        try:
+            text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        except OSError:
+            text = ""
+        if begin not in text or end not in text:
+            missing.append(str(path.relative_to(root)))
+    return missing
+
+
+def has_aps_artifacts(root: Path) -> bool:
+    paths = (
+        ".ai/standard-manifest.json",
+        ".ai/state.yaml",
+        ".ai/decisions.md",
+        ".ai/registry.yaml",
+        ".ai/standards/lifecycle.md",
+        ".ai/bootstrap/bootstrap-prompt.txt",
+    )
+    return has_aps_markers(root) or any((root / path).exists() for path in paths)
+
+
+def governed_ancestor(root: Path) -> Path | None:
+    for parent in root.parents:
+        if has_aps_artifacts(parent):
+            return parent
+    return None
+
+
 def is_governed(root: Path) -> bool:
     return (root / ".ai" / "standard-manifest.json").is_file()
 
@@ -39,6 +89,38 @@ def read_manifest(root: Path) -> dict:
         return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
     except Exception:
         return {}
+
+
+def missing_managed_files(root: Path, manifest: dict) -> list[str]:
+    installed_files = manifest.get("installed_files")
+    if not isinstance(installed_files, dict) or not installed_files:
+        return [".ai/standard-manifest.json (invalid installed_files)"]
+    missing = []
+    for relative in installed_files:
+        path = Path(relative)
+        if path.is_absolute() or ".." in path.parts:
+            missing.append(f"invalid managed path: {relative}")
+        elif not (root / path).is_file():
+            missing.append(relative)
+    return missing
+
+
+def read_runtime_state(root: Path) -> dict[str, str]:
+    path = root / ".ai" / "state.yaml"
+    if not path.is_file():
+        return {}
+    fields: dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    for line in lines:
+        key, separator, value = line.partition(":")
+        if separator and key.strip() in {"cycle", "stage_status"}:
+            fields[key.strip()] = value.strip().strip("\"'")
+    if not fields.get("cycle") or not fields.get("stage_status"):
+        return {}
+    return fields
 
 
 def ensure_git(root: Path, enabled: bool = True) -> None:
@@ -107,8 +189,17 @@ def install(root: Path, host: str, force_managed: bool = False, quiet: bool = Fa
 
 def cmd_init(args: argparse.Namespace) -> int:
     root = args.project.expanduser().resolve()
+    ancestor = governed_ancestor(root)
+    if ancestor:
+        print(f"REFUSE  nested APS project detected under governed project: {ancestor}")
+        print("Use the existing project root, or explicitly create a separate project boundary first.")
+        return 2
+    if has_aps_artifacts(root):
+        print("REFUSE  APS files or runtime state already exist in this directory.")
+        print("Use `aps resume` to recover it or `aps upgrade` to update the Standard.")
+        return 2
     existed_with_content = project_has_content(root)
-    if existed_with_content and not args.force_mode:
+    if existed_with_content:
         print("REFUSE  existing project content detected.")
         print("Use `aps resume` to adopt it, or `aps rebaseline` to re-audit it from Stage 01.")
         return 2
@@ -128,19 +219,79 @@ def cmd_resume(args: argparse.Namespace) -> int:
     if not root.is_dir():
         print(f"FAIL  project directory not found: {root}")
         return 2
-    if not project_has_content(root) and not is_governed(root):
+    ancestor = governed_ancestor(root)
+    if ancestor and not is_governed(root):
+        print(f"REFUSE  nested ungoverned directory under APS project: {ancestor}")
+        print("Run `aps resume` from the governed project root.")
+        return 2
+    if is_governed(root):
+        manifest = read_manifest(root)
+        if not manifest:
+            print("REFUSE  APS manifest is unreadable or invalid.")
+            print("Run `aps upgrade` only after reviewing the damaged project state.")
+            return 2
+        if manifest.get("version") != STANDARD_VERSION:
+            print(f"REFUSE  installed Standard is {manifest.get('version', 'unknown')}; bundled version is {STANDARD_VERSION}.")
+            print("Run `aps upgrade` explicitly before resuming.")
+            return 2
+        marker_missing = missing_aps_markers(root)
+        if marker_missing:
+            print("REFUSE  APS routing markers are incomplete:")
+            for item in marker_missing:
+                print(f"  - {item}")
+            print("Run `aps upgrade` explicitly after reviewing the project state.")
+            return 2
+        missing = missing_managed_files(root, manifest)
+        if missing:
+            print("REFUSE  installed Standard files are missing or invalid:")
+            for item in missing:
+                print(f"  - {item}")
+            print("Run `aps upgrade` explicitly after reviewing the project state.")
+            return 2
+        return launch_host(root, args.host, handoff_prompt("resume"), args.no_launch)
+    if has_aps_artifacts(root):
+        print("REFUSE  partial APS installation detected without a valid manifest.")
+        print("Review the directory before using `aps upgrade` to repair it.")
+        return 2
+    if not project_has_content(root):
         print("REFUSE  this looks like an empty/new project. Use `aps init`.")
         return 2
-    install(root, args.host, args.force_managed)
+    print("Adopting existing project into APS; future `aps resume` operations are read-only.")
+    install(root, args.host, force_managed=False)
     return launch_host(root, args.host, handoff_prompt("resume"), args.no_launch)
 
 
 def cmd_rebaseline(args: argparse.Namespace) -> int:
     root = args.project.expanduser().resolve()
-    if not root.is_dir() or (not project_has_content(root) and not is_governed(root)):
+    if not root.is_dir() or not is_governed(root):
         print("REFUSE  rebaseline requires an existing project.")
         return 2
-    install(root, args.host, args.force_managed)
+    if not args.confirm:
+        print("REFUSE  rebaseline creates a new Cycle and requires explicit confirmation.")
+        print("Re-run with `aps rebaseline --confirm` after reviewing the current project state.")
+        return 2
+    manifest = read_manifest(root)
+    if not manifest:
+        print("REFUSE  APS manifest is unreadable or invalid.")
+        return 2
+    marker_missing = missing_aps_markers(root)
+    if marker_missing:
+        print("REFUSE  APS routing markers are incomplete; run `aps upgrade` first.")
+        return 2
+    runtime = read_runtime_state(root)
+    if not runtime:
+        print("REFUSE  rebaseline requires initialized runtime state; resume Bootstrap first.")
+        return 2
+    if runtime["cycle"] != "CYCLE-001" and runtime["stage_status"] != "COMPLETE":
+        print(f"REFUSE  active Cycle {runtime['cycle']} is not complete; resume it instead of creating another Cycle.")
+        return 2
+    if manifest.get("version") != STANDARD_VERSION:
+        print(f"REFUSE  installed Standard is {manifest.get('version', 'unknown')}; run `aps upgrade` first.")
+        return 2
+    missing = missing_managed_files(root, manifest)
+    if missing:
+        print("REFUSE  installed Standard files are missing or invalid; run `aps upgrade` first.")
+        return 2
     return launch_host(root, args.host, handoff_prompt("rebaseline"), args.no_launch)
 
 
@@ -155,11 +306,19 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     if not root.is_dir():
         print(f"FAIL  project directory not found: {root}")
         return 2
+    ancestor = governed_ancestor(root)
+    if ancestor and not is_governed(root):
+        print(f"REFUSE  nested ungoverned directory under APS project: {ancestor}")
+        print("Run `aps upgrade` from the governed project root.")
+        return 2
     before = read_manifest(root).get("version")
     result = install(root, args.host, args.force_managed)
     after = result["version"]
-    if before == after and result["changed"] == 0 and not result["incoming"]:
-        print(f"OK    already on bundled Standard {after}")
+    if before == after and result["changed"] == 0 and not result["manifest_changed"]:
+        if result["incoming"]:
+            print(f"OK    Standard {after} unchanged; {len(result['incoming'])} managed conflict(s) remain")
+        else:
+            print(f"OK    already on bundled Standard {after}")
     else:
         print(f"OK    Standard {before or 'unmanaged'} -> {after}")
     print("Run `aps doctor` after Bootstrap/runtime state is available.")
@@ -169,9 +328,13 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     root = args.project.expanduser().resolve()
     manifest = read_manifest(root)
+    manifest_present = (root / ".ai" / "standard-manifest.json").is_file()
     state = root / ".ai" / "state.yaml"
     print(f"Project: {root}")
-    print(f"Governed: {'yes' if manifest else 'no'}")
+    if manifest_present and not manifest:
+        print("Governed: invalid manifest")
+    else:
+        print(f"Governed: {'yes' if manifest else 'no'}")
     if manifest:
         print(f"Standard: {manifest.get('version', 'unknown')}")
         conflicts = manifest.get("local_modification_conflicts") or []
@@ -213,7 +376,7 @@ def interactive_menu() -> int:
     mapping = {
         "1": ["init", str(root)],
         "2": ["resume", str(root)],
-        "3": ["rebaseline", str(root)],
+        "3": ["rebaseline", str(root), "--confirm"],
         "4": ["doctor", str(root)],
         "5": ["upgrade", str(root)],
         "6": ["status", str(root)],
@@ -241,7 +404,7 @@ def build_parser() -> argparse.ArgumentParser:
     common(s)
     s.add_argument("--no-launch", action="store_true", help="install only; print the Agent handoff instead of launching Codex")
     s.add_argument("--no-git", action="store_true", help="do not initialize Git in a new empty directory")
-    s.add_argument("--force-mode", action="store_true", help="allow init even when project content already exists")
+    s.add_argument("--force-mode", action="store_true", help="deprecated; cannot bypass existing-project protection")
     s.set_defaults(func=cmd_init)
 
     s = sub.add_parser("resume", help="adopt/resume an existing project")
@@ -251,6 +414,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("rebaseline", help="start a new full review Cycle from Stage 01")
     common(s)
+    s.add_argument("--confirm", action="store_true", help="confirm creation of a new Cycle")
     s.add_argument("--no-launch", action="store_true")
     s.set_defaults(func=cmd_rebaseline)
 

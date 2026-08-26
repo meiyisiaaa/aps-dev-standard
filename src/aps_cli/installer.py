@@ -51,11 +51,19 @@ def atomic_write(path: Path, data: bytes) -> None:
             temporary.unlink()
 
 
-def write_json(path: Path, data: dict) -> None:
-    atomic_write(path, (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+def write_json_if_changed(path: Path, data: dict) -> bool:
+    encoded = (json.dumps(data, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    if path.is_file():
+        try:
+            if path.read_bytes() == encoded:
+                return False
+        except OSError:
+            pass
+    atomic_write(path, encoded)
+    return True
 
 
-def backup_file(root: Path, path: Path, stamp: str) -> None:
+def backup_file(root: Path, path: Path) -> None:
     if not path.exists():
         return
     try:
@@ -63,7 +71,10 @@ def backup_file(root: Path, path: Path, stamp: str) -> None:
     except ValueError:
         rel = Path(path.name)
     backup_rel = Path(*rel.parts[1:]) if rel.parts and rel.parts[0] == ".ai" else rel
-    dst = root / ".ai" / "archive" / "install-backups" / stamp / backup_rel
+    content_hash = sha256(path)
+    dst = root / ".ai" / "archive" / "install-backups" / content_hash / backup_rel
+    if dst.is_file() and sha256(dst) == content_hash:
+        return
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(path, dst)
 
@@ -81,12 +92,26 @@ def copy_file_atomic(src: Path, dst: Path) -> None:
             temporary.unlink()
 
 
-def update_marked_block(path: Path, begin: str, end: str, block: str, root: Path, stamp: str) -> str:
+def copy_file_if_changed(src: Path, dst: Path, src_hash: str) -> bool:
+    if dst.is_file() and sha256(dst) == src_hash:
+        return False
+    copy_file_atomic(src, dst)
+    return True
+
+
+def update_marked_block(path: Path, begin: str, end: str, block: str, root: Path) -> str:
     old = path.read_text(encoding="utf-8") if path.is_file() else ""
-    if begin in old and end in old:
+    begin_count = old.count(begin)
+    end_count = old.count(end)
+    if begin_count != end_count or begin_count > 1:
+        raise RuntimeError(f"managed marker block is duplicated or incomplete: {path}")
+    if begin_count == 1:
         prefix, rest = old.split(begin, 1)
         _, suffix = rest.split(end, 1)
-        new = prefix.rstrip() + "\n\n" + block.strip() + "\n" + suffix.lstrip("\n")
+        prefix = prefix.rstrip()
+        suffix = suffix.lstrip("\n")
+        separator = "\n\n" if prefix else ""
+        new = prefix + separator + block.strip() + "\n" + suffix
         action = "update"
     else:
         sep = "\n\n" if old.strip() else ""
@@ -95,7 +120,7 @@ def update_marked_block(path: Path, begin: str, end: str, block: str, root: Path
     if new == old:
         return "unchanged"
     if path.exists():
-        backup_file(root, path, stamp)
+        backup_file(root, path)
     atomic_write(path, new.encode("utf-8"))
     return action
 
@@ -186,7 +211,6 @@ def install_standard(bundle: Path, root: Path, host: str = "codex", force_manage
         raise RuntimeError(f"project path is not a directory: {root}")
 
     with install_lock(root):
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         old_manifest_path = root / ".ai" / "standard-manifest.json"
         old_manifest = load_json(old_manifest_path)
         old_hashes = old_manifest.get("installed_files", {}) if isinstance(old_manifest.get("installed_files", {}), dict) else {}
@@ -215,7 +239,7 @@ def install_standard(bundle: Path, root: Path, host: str = "codex", force_manage
             safe_to_replace = (not dst.exists()) or (previous_hash is not None and current_hash == previous_hash)
             if safe_to_replace or force_managed:
                 if dst.exists():
-                    backup_file(root, dst, stamp)
+                    backup_file(root, dst)
                 copy_file_atomic(src, dst)
                 if dst_rel.endswith(".py"):
                     dst.chmod(dst.stat().st_mode | 0o111)
@@ -226,29 +250,44 @@ def install_standard(bundle: Path, root: Path, host: str = "codex", force_manage
                 if incoming_rel.parts and incoming_rel.parts[0] == ".ai":
                     incoming_rel = Path(*incoming_rel.parts[1:])
                 incoming_dst = root / ".ai" / "incoming" / version / incoming_rel
-                copy_file_atomic(src, incoming_dst)
+                copy_file_if_changed(src, incoming_dst, src_hash)
                 installed_hashes[dst_rel] = src_hash
                 incoming.append(dst_rel)
 
         agents_block = (payload / "templates" / "AGENTS.block.md").read_text(encoding="utf-8")
-        update_marked_block(root / "AGENTS.md", BEGIN_AGENTS, END_AGENTS, agents_block, root, stamp)
+        if update_marked_block(root / "AGENTS.md", BEGIN_AGENTS, END_AGENTS, agents_block, root) != "unchanged":
+            changed += 1
 
         ignore_body = (payload / "gitignore.fragment").read_text(encoding="utf-8").strip()
         ignore_block = f"{BEGIN_GITIGNORE}\n{ignore_body}\n{END_GITIGNORE}"
-        update_marked_block(root / ".gitignore", BEGIN_GITIGNORE, END_GITIGNORE, ignore_block, root, stamp)
+        if update_marked_block(root / ".gitignore", BEGIN_GITIGNORE, END_GITIGNORE, ignore_block, root) != "unchanged":
+            changed += 1
 
-        install_manifest = {
-            "name": "ai-project-standard",
-            "version": version,
-            "layout_version": 1,
-            "installed_at": utc_now(),
-            "host_hint": host,
-            "installed_files": installed_hashes,
-            "local_modification_conflicts": incoming,
-        }
-        write_json(old_manifest_path, install_manifest)
+        install_manifest = dict(old_manifest) if isinstance(old_manifest, dict) else {}
+        install_manifest.update(
+            {
+                "name": "ai-project-standard",
+                "version": version,
+                "layout_version": 1,
+                "host_hint": host,
+                "installed_files": installed_hashes,
+                "local_modification_conflicts": incoming,
+            }
+        )
+        if not install_manifest.get("installed_at"):
+            install_manifest["installed_at"] = utc_now()
+        manifest_changed = write_json_if_changed(old_manifest_path, install_manifest)
         if not quiet:
-            print(f"Installed AI Project Standard {version} in {root}")
+            if old_manifest.get("version") == version and changed == 0 and not incoming and not manifest_changed:
+                print(f"AI Project Standard {version} already current in {root}")
+            else:
+                print(f"Installed AI Project Standard {version} in {root}")
             if incoming:
                 print(f"WARN: {len(incoming)} locally modified managed file(s) preserved; review .ai/incoming/{version}/")
-        return {"changed": changed, "incoming": incoming, "root": str(root), "version": version}
+        return {
+            "changed": changed,
+            "incoming": incoming,
+            "manifest_changed": manifest_changed,
+            "root": str(root),
+            "version": version,
+        }

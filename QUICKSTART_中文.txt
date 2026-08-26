@@ -29,8 +29,14 @@ aps
 
 常用：
 aps init        新项目
-aps resume      接管旧项目
-aps rebaseline  旧项目从 Stage 01 重新审查
+aps resume      首次接管旧项目，之后只恢复状态
+aps rebaseline  旧项目从 Stage 01 重新审查（需运行状态和 --confirm）
 aps doctor      项目体检
 aps status      查看状态
 aps upgrade     升级 Standard
+
+保护规则：
+- 不要重复执行 init；已有 APS 文件时会拒绝。
+- resume 不会重复安装或升级 Standard。
+- 只有 upgrade 会更新已安装的 Standard 文件。
+- 相同版本重复 upgrade 不应修改工作区。

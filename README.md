@@ -55,11 +55,19 @@ Or directly:
 ```bash
 aps init
 aps resume
-aps rebaseline
+aps rebaseline --confirm
 aps doctor
 aps status
 aps upgrade
 ```
+
+Command boundaries are deliberate: `init` is for a new project, `resume` adopts an existing project once and is read-only after a valid Standard manifest exists, and `upgrade` is the only normal command that updates installed Standard files. `rebaseline` requires initialized runtime state and explicit confirmation; an incomplete non-initial Cycle must be resumed before another one is created:
+
+```bash
+aps rebaseline --confirm
+```
+
+Repeating `resume` or a same-version `upgrade` is a no-op and should not dirty the project workspace. Do not use `init --force-mode` to bypass an existing project; use `resume` to adopt it.
 
 ## Temporary use before repository configuration
 
