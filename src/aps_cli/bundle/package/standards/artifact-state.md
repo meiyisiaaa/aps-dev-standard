@@ -897,7 +897,7 @@ matrix
 
 对话交互规则：
 
-在当前对话中提出结构化问题，并保留 Decision Request 中的完整候选项、证据、推荐项和取舍。决策交互不受 Host UI 或选项数量限制；多选、排序、自由输入、数字等类型可以分轮提问或直接接受自由文本。用户回答后运行 `aps decision answer`，解除 blocker 并递增 state revision。
+在当前对话中提出结构化问题前，必须逐项分析每个选项的优点、缺点、适用条件和主要风险，并保留 Decision Request 中的完整候选项、证据、推荐项和取舍。每个选项的 `tradeoffs` 至少记录优点和缺点；已知事实与推断分开标记，未知项明确写为待验证。如果给出推荐，必须说明推荐依据以及什么新证据会改变推荐。决策交互不受 Host UI 或选项数量限制；多选、排序、自由输入、数字等类型可以分轮提问或直接接受自由文本。用户回答后运行 `aps decision answer`，解除 blocker 并递增 state revision。
 
 ### 10.2 Research Brief
 

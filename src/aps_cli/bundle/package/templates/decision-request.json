@@ -13,13 +13,19 @@
       "id": "A",
       "title": "方案 A",
       "summary": "方案 A 的核心结果",
-      "tradeoffs": "方案 A 的主要代价"
+      "tradeoffs": [
+        "优点：方案 A 的主要收益",
+        "缺点：方案 A 的主要代价"
+      ]
     },
     {
       "id": "B",
       "title": "方案 B",
       "summary": "方案 B 的核心结果",
-      "tradeoffs": "方案 B 的主要代价"
+      "tradeoffs": [
+        "优点：方案 B 的主要收益",
+        "缺点：方案 B 的主要代价"
+      ]
     }
   ],
   "recommended": "A",

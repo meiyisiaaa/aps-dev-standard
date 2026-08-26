@@ -68,6 +68,9 @@ def main() -> int:
         project = temp / "source-project"
         run_python("aps.py", "init", str(project), "--host", "generic", "--no-launch", "--no-git")
         run_python("aps.py", "doctor", str(project), "--host", "generic", "--standard-only")
+        bootstrap_prompt = (project / ".ai" / "bootstrap" / "bootstrap-prompt.txt").read_text(encoding="utf-8")
+        if any(marker not in bootstrap_prompt for marker in ("优点", "缺点", "适用条件", "主要风险")):
+            raise SystemExit("decision prompt does not require per-option tradeoff analysis")
 
         before_repeat = snapshot_files(project)
         run_python_expect_failure("aps.py", "init", str(project), "--host", "generic", "--no-launch", "--force-mode")
@@ -123,8 +126,18 @@ def main() -> int:
                     "question": "选择产品入口",
                     "why_now": "两个方向会导致不同产品路线",
                     "options": [
-                        {"id": "A", "title": "方案 A", "summary": "快速验证"},
-                        {"id": "B", "title": "方案 B", "summary": "长期控制"},
+                        {
+                            "id": "A",
+                            "title": "方案 A",
+                            "summary": "快速验证",
+                            "tradeoffs": ["优点：验证速度快", "缺点：长期控制较弱"],
+                        },
+                        {
+                            "id": "B",
+                            "title": "方案 B",
+                            "summary": "长期控制",
+                            "tradeoffs": ["优点：长期可控", "缺点：初期成本较高"],
+                        },
                     ],
                     "recommended": "A",
                     "evidence_refs": ["01_IDEA.md"],
@@ -137,8 +150,8 @@ def main() -> int:
             encoding="utf-8",
         )
         request_output = run_python_capture("aps.py", "decision", "request", str(decision_path), str(project))
-        if "NEXT  Answer in the current conversation" not in request_output:
-            raise SystemExit("decision request did not use the conversation handoff")
+        if "explain each option's pros/cons" not in request_output:
+            raise SystemExit("decision request did not require per-option tradeoff analysis")
         run_python("aps.py", "decision", "list", str(project))
         status_output = run_python_capture("aps.py", "status", str(project))
         if "Pending decisions: DEC-001" not in status_output:

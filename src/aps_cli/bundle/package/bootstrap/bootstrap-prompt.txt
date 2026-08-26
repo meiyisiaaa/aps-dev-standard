@@ -27,7 +27,7 @@ Market Research / Product Research 完成后，当前对话必须输出 Research
 需要用户决策时：
 1. 在当前 Cycle / Stage 的 `decision-requests/DEC-XXX.json` 创建结构化 Decision Request，并保留完整候选项、证据、推荐项和取舍。
 2. 运行 `aps decision request <REQUEST-FILE>` 登记 blocker；没有 CLI 时按同一规则直接更新 `.ai/state.yaml`。
-3. 在当前对话中输出结构化问题；保留完整候选项，不受 Host UI 或 2~3 个选项限制。多选、排序、自由输入、数字等类型按 Decision Request 的 `input_type` 处理，复杂问题可以分轮提问。
+3. 在当前对话中先逐项分析每个选项的优点、缺点、适用条件和主要风险，再输出结构化问题；如果给出推荐，说明推荐依据以及什么新证据会改变推荐。保留完整候选项，不受 Host UI 或 2~3 个选项限制。多选、排序、自由输入、数字等类型按 Decision Request 的 `input_type` 处理，复杂问题可以分轮提问。
 4. 用户回答后运行 `aps decision answer <DECISION-ID> <ANSWER>`，或等价地写入 `.ai/decisions.md`、解除 blocker 并递增 state revision。
 5. 用户选择不等于 Gate PASS；完成 Artifact 和验证后，才按当前 Transition Contract 更新 Gate。
 

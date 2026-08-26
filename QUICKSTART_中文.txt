@@ -43,7 +43,7 @@ aps research brief <调研 Artifact>  输出 Research Brief
 
 aps decision request .ai/cycles/CYCLE-001/stages/01-idea/decision-requests/DEC-001.json
 
-统一在当前对话中提出结构化决策问题。完整候选项保留在 Decision Request 中，不限制为 2~3 个选项；多选、排序、自由输入或复杂决策可分轮提问或直接使用自由文本。
+统一在当前对话中提出结构化决策问题。提问前必须逐项说明每个选项的优点、缺点、适用条件和主要风险；如果给出推荐，必须说明推荐依据以及什么新证据会改变推荐。完整候选项保留在 Decision Request 中，不限制为 2~3 个选项；多选、排序、自由输入或复杂决策可分轮提问或直接使用自由文本。
 
 用户回答后记录：
 
