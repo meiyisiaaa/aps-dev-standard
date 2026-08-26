@@ -14,6 +14,17 @@ from .installer import BEGIN_AGENTS, BEGIN_GITIGNORE, END_AGENTS, END_GITIGNORE,
 from .research import render_brief
 
 HOSTS = ("codex", "generic")
+PLAN_MODE_REQUIRED_STAGES = frozenset({1, 5, 6, 7, 8, 9, 10, 13, 14, 15, 16, 20})
+
+
+def stage_requires_plan_mode(state: dict) -> bool:
+    """Return whether the active Stage requires a Plan-mode entry handoff."""
+    if state.get("stage_status") == "COMPLETE":
+        return False
+    stage = state.get("stage")
+    if isinstance(stage, int) and stage in PLAN_MODE_REQUIRED_STAGES:
+        return True
+    return stage == 22 and bool(state.get("active_change_refs"))
 
 
 def bundle_dir() -> Path:
@@ -150,6 +161,11 @@ def _runtime_summary(root: Path) -> list[str]:
         f"Stage: {state.get('stage', 'unknown')} / {state.get('stage_type', 'unknown')}",
         f"Status: {state.get('stage_status', 'unknown')}",
     ]
+    if stage_requires_plan_mode(state):
+        lines.append("Mode gate: PLAN (required on Stage entry)")
+        lines.append("Mode action: switch Codex to Plan mode before changing files; after plan acceptance, execute normally.")
+    else:
+        lines.append("Mode gate: NORMAL (Plan mode not required)")
     gate = state.get("gate_status")
     if gate not in (None, "null"):
         lines.append(f"Gate: {gate}")
@@ -203,7 +219,7 @@ def handoff_prompt(mode: str, root: Path | None = None) -> str:
         prompt = (
             "Read `.ai/bootstrap/bootstrap-prompt.txt` and execute it. "
             "Treat this as a new project, initialize the runtime governance state, start Stage 01, "
-            "and stop at the first required Gate or user decision."
+            "switch to Codex Plan mode before any file-changing action, and stop at the first required Gate or user decision."
         )
     elif mode == "resume":
         prompt = (
@@ -214,7 +230,7 @@ def handoff_prompt(mode: str, root: Path | None = None) -> str:
         prompt = (
             "Read `.ai/bootstrap/bootstrap-prompt.txt` and execute it first. "
             "Then read `.ai/bootstrap/rebaseline-existing-project.txt` and execute it. "
-            "Create the new rebaseline Cycle and begin Stage 01; do not run the full lifecycle in one turn."
+            "Create the new rebaseline Cycle and begin Stage 01 in Codex Plan mode; do not run the full lifecycle in one turn."
         )
     else:
         raise ValueError(mode)
@@ -225,7 +241,19 @@ def handoff_prompt(mode: str, root: Path | None = None) -> str:
     return prompt
 
 
-def launch_host(root: Path, host: str, prompt: str, no_launch: bool) -> int:
+def current_stage_requires_plan_mode(root: Path) -> bool:
+    try:
+        return stage_requires_plan_mode(load_runtime_state(root))
+    except DecisionError:
+        return False
+
+
+def launch_host(root: Path, host: str, prompt: str, no_launch: bool, require_plan_mode: bool = False) -> int:
+    if require_plan_mode and host == "codex" and not no_launch:
+        print("\nCodex Plan mode is required before this Stage handoff.")
+        print("APS will not auto-launch a normal Codex session. Open the project in Codex, select Plan mode, and send:\n")
+        print(prompt)
+        return 0
     if no_launch or host != "codex":
         print("\nNext action in your Agent Host:\n")
         print(prompt)
@@ -273,7 +301,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     root.mkdir(parents=True, exist_ok=True)
     ensure_git(root, enabled=not args.no_git)
     install(root, args.host, args.force_managed)
-    rc = launch_host(root, args.host, handoff_prompt("init", root), args.no_launch)
+    rc = launch_host(root, args.host, handoff_prompt("init", root), args.no_launch, require_plan_mode=True)
     if rc != 0:
         return rc
     if args.no_launch:
@@ -315,7 +343,13 @@ def cmd_resume(args: argparse.Namespace) -> int:
                 print(f"  - {item}")
             print("Run `aps upgrade` explicitly after reviewing the project state.")
             return 2
-        return launch_host(root, args.host, handoff_prompt("resume", root), args.no_launch)
+        return launch_host(
+            root,
+            args.host,
+            handoff_prompt("resume", root),
+            args.no_launch,
+            require_plan_mode=current_stage_requires_plan_mode(root),
+        )
     if has_aps_artifacts(root):
         print("REFUSE  partial APS installation detected without a valid manifest.")
         print("Review the directory before using `aps upgrade` to repair it.")
@@ -325,7 +359,7 @@ def cmd_resume(args: argparse.Namespace) -> int:
         return 2
     print("Adopting existing project into APS; future `aps resume` operations are read-only.")
     install(root, args.host, force_managed=False)
-    return launch_host(root, args.host, handoff_prompt("resume", root), args.no_launch)
+    return launch_host(root, args.host, handoff_prompt("resume", root), args.no_launch, require_plan_mode=True)
 
 
 def cmd_rebaseline(args: argparse.Namespace) -> int:
@@ -359,7 +393,7 @@ def cmd_rebaseline(args: argparse.Namespace) -> int:
     if missing:
         print("REFUSE  installed Standard files are missing or invalid; run `aps upgrade` first.")
         return 2
-    return launch_host(root, args.host, handoff_prompt("rebaseline", root), args.no_launch)
+    return launch_host(root, args.host, handoff_prompt("rebaseline", root), args.no_launch, require_plan_mode=True)
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:

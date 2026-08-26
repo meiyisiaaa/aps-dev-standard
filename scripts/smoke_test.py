@@ -72,6 +72,9 @@ def main() -> int:
         required_prompt_markers = ("优点", "缺点", "适用条件", "主要风险", "直接回答原始研究问题", "分析关键证据")
         if any(marker not in bootstrap_prompt for marker in required_prompt_markers):
             raise SystemExit("bootstrap prompt does not require decision and research analysis")
+        plan_prompt_markers = ("Codex", "Plan 模式", "Stage 01、05、06、07、08、09、10、13、14、15、16、20", "Host capability blocker")
+        if any(marker not in bootstrap_prompt for marker in plan_prompt_markers):
+            raise SystemExit("bootstrap prompt does not enforce Plan mode entry")
 
         before_repeat = snapshot_files(project)
         run_python_expect_failure("aps.py", "init", str(project), "--host", "generic", "--no-launch", "--force-mode")
@@ -106,8 +109,24 @@ def main() -> int:
         state.write_text((project / ".ai" / "templates" / "state.yaml").read_text(encoding="utf-8"), encoding="utf-8")
         run_python("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
         initial_status = run_python_capture("aps.py", "status", str(project))
-        if "Next action:" not in initial_status:
-            raise SystemExit("status did not provide a next action")
+        if "Next action:" not in initial_status or "Mode gate: PLAN (required on Stage entry)" not in initial_status:
+            raise SystemExit("status did not provide the Stage Plan mode gate and next action")
+        codex_resume = run_python_capture("aps.py", "resume", str(project), "--host", "codex")
+        if "Plan mode is required" not in codex_resume or "will not auto-launch" not in codex_resume:
+            raise SystemExit("Codex resume did not block a normal session for a Plan-required Stage")
+        normal_state = state.read_text(encoding="utf-8")
+        state.write_text(normal_state.replace("stage: 1", "stage: 17").replace("stage_type: GATED", "stage_type: EXECUTION_LOOP").replace("gate_status: PENDING", "gate_status: null"), encoding="utf-8")
+        normal_status = run_python_capture("aps.py", "status", str(project))
+        if "Mode gate: NORMAL (Plan mode not required)" not in normal_status:
+            raise SystemExit("status incorrectly required Plan mode for an execution Stage")
+        state.write_text(normal_state.replace("stage: 1", "stage: 22").replace("stage_type: GATED", "stage_type: ROUTER").replace("gate_status: PENDING", "gate_status: null").replace("active_change_refs: []", "active_change_refs: [CHANGE-001]"), encoding="utf-8")
+        change_status = run_python_capture("aps.py", "status", str(project))
+        if "Mode gate: PLAN (required on Stage entry)" not in change_status:
+            raise SystemExit("status did not require Plan mode for an active Stage 22 change")
+        state.write_text(normal_state, encoding="utf-8")
+        codex_handoff = run_python_capture("aps.py", "init", str(temp / "codex-mode-project"), "--host", "codex", "--no-git")
+        if "Plan mode is required" not in codex_handoff or "will not auto-launch" not in codex_handoff:
+            raise SystemExit("Codex handoff did not block a normal session for a Plan-required Stage")
         state.write_text(state.read_text(encoding="utf-8").replace("cycle: CYCLE-001", "cycle: CYCLE-002"), encoding="utf-8")
         (project / ".ai" / "registry.yaml").write_text(
             (project / ".ai" / "templates" / "registry.yaml").read_text(encoding="utf-8"),

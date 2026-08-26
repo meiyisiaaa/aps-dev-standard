@@ -123,6 +123,20 @@ Failure Route
 Downstream Dependencies
 ```
 
+### 0.3.1 Stage Entry / Host Plan Mode
+
+Codex Plan 模式是 Stage 入口的 Host 交互约束，不是新的 GateStatus，也不替代 Decision Request。以下 Stage 在首次进入、从上游返修回来，或范围 / 方向发生变化时，必须先打开原生 Codex Plan 模式：
+
+```text
+Stage 01、05、06、07、08、09、10、13、14、15、16、20
+```
+
+Stage 22 在存在 Active Change 时同样需要 Plan 模式。Plan 阶段至少应明确输入、约束、候选方案、风险、受影响 Artifact、验证方式和下一步；计划被用户接受后，才可切换普通模式执行。普通对话轮次不需要重复规划。
+
+如果 Host 无法打开或确认原生 Plan 模式，Agent MUST NOT 假装已经切换；应记录 Host capability blocker，停止工作区变更，等待用户切换 Host 模式或使用已记录的等价 fallback。`aps status` 和 handoff 必须显示当前 Mode Gate；Codex Host 在该 Gate 未满足时不得自动启动普通会话。
+
+Research Stage 02–04 默认不强制 Plan 模式；只有研究范围、方法或证据成本复杂时，才先用 Plan 设计研究方案。实际研究仍必须在当前对话直接回答原始问题并输出 Research Brief。
+
 每个 Stage 在完成、阻塞、暂停或切换对话前，MUST 在当前对话输出一页 Stage User Brief。固定包含：
 
 ```text
@@ -3669,6 +3683,7 @@ Host ID
 Detected Version / Capability（可取得时）
 Project Instruction Entry
 Project Skill Discovery Location
+Plan Mode Support / Invocation / Verification
 Implicit Invocation Support
 Explicit Invocation Method
 Tool / Permission Constraints

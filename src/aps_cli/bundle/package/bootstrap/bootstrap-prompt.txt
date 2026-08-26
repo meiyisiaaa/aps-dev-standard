@@ -16,9 +16,11 @@ Bootstrap 顺序：
 8. 使用 Agent Skill 时，解析当前 Host 的项目级 discovery 位置，检查 Skill 结构、路径、同名冲突、触发与最小 Smoke Eval。未注册或未验证的 Skill 不得假装已生效。
 9. 若文档、代码、状态、Skill 与已确认 Decision 冲突：新增 blocker；GATED Stage 设 `gate_status=PENDING`，非 GATED Stage 设 `stage_status=BLOCKED`；不要自行选择真相。
 10. 执行当前 Stage Contract / Transition Contract；不要一次执行整个开发周期。
-11. 全局治理写入遵守 Single Writer、revision 与 compare-before-write；子 Agent 不直接覆盖全局治理 Artifact。
-12. 只有满足当前 Transition / Gate 条件并完成 Validation 后才推进。
-13. 每个 Stage 在完成、阻塞、暂停或切换对话前，必须在当前对话输出一页 Stage User Brief，固定包含：目标、输入、已完成、未完成、用户决策、确认影响、验证结果。简报不等于阶段完成；Artifact Contract、验收条件和 Gate / Transition 仍必须单独满足。
+11. 进入或恢复以下 Stage 时，必须先在当前 Agent Host 中打开原生 Plan 模式（Codex Host 使用 Codex Plan 模式），再进行任何文件修改或其他工作区变更：Stage 01、05、06、07、08、09、10、13、14、15、16、20。首次进入、从上游返修回来、或范围 / 方向发生变化时重新执行一次；计划确认后可切换普通模式执行。Stage 22 在存在 Active Change 时同样执行。每个普通对话轮次不重复规划。
+12. 如果当前 Host 无法打开或确认原生 Plan 模式，不得假装已满足；先记录 Host capability blocker，并停止会修改工作区的动作，等待用户在 Host 中切换或提供已记录的等价 fallback。
+13. 全局治理写入遵守 Single Writer、revision 与 compare-before-write；子 Agent 不直接覆盖全局治理 Artifact。
+14. 只有满足当前 Transition / Gate 条件并完成 Validation 后才推进。
+15. 每个 Stage 在完成、阻塞、暂停或切换对话前，必须在当前对话输出一页 Stage User Brief，固定包含：目标、输入、已完成、未完成、用户决策、确认影响、验证结果。简报不等于阶段完成；Artifact Contract、验收条件和 Gate / Transition 仍必须单独满足。
 
 Market Research / Product Research 完成后，当前对话必须先直接回答原始研究问题，再分析关键证据，最后输出 Research Brief；多个问题必须逐项回答。Brief 至少说明范围、方法与来源、关键发现、结论 / 建议、未确定项和待决策项；完整报告仍要落盘到对应 Stage Artifact。CLI 可用时运行 `aps research brief <ARTIFACT>` 生成可直接展示的摘要，但不能替代直接回答和分析。禁止只写文档后静默完成。
 

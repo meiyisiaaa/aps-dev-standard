@@ -99,6 +99,8 @@ After switching conversations, run `aps status` or `aps resume --no-launch` to p
 
 Before ending, pausing, blocking, or handing off any Stage, output a one-page Stage User Brief in the current conversation with: goal, inputs, completed work, incomplete work, user decisions, confirmation impact, and verification results. The Stage Artifact must also contain or reference an Artifact Contract with its purpose, inputs, outputs, acceptance criteria, current status, blocking decisions, and next stage. A written document alone does not mean the Stage is complete.
 
+High-impact Stage entry requires Codex Plan mode before workspace changes: Stage 01, 05, 06, 07, 08, 09, 10, 13, 14, 15, 16, and 20. Stage 22 requires it when an Active Change exists. After the plan is accepted, switch to normal mode for execution. If `aps` is asked to launch Codex for one of these entries, it deliberately does not start a normal session; open the project in Codex, select Plan mode, and send the printed handoff.
+
 ## Temporary use before repository configuration
 
 The installers also accept a repository override.
