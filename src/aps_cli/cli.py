@@ -17,6 +17,13 @@ HOSTS = ("codex", "generic")
 PLAN_MODE_REQUIRED_STAGES = frozenset({1, 5, 6, 7, 8, 9, 10, 13, 14, 15, 16, 20})
 
 
+def configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def stage_requires_plan_mode(state: dict) -> bool:
     """Return whether the active Stage requires a Plan-mode entry handoff."""
     if state.get("stage_status") == "COMPLETE":
@@ -143,7 +150,15 @@ def ensure_git(root: Path, enabled: bool = True) -> None:
     if not git:
         print("WARN  git not found; skipped git init")
         return
-    proc = subprocess.run([git, "init"], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    proc = subprocess.run(
+        [git, "init"],
+        cwd=root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     if proc.returncode == 0:
         print("OK    initialized Git repository")
     else:
@@ -594,6 +609,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_stdio()
     argv = sys.argv[1:] if argv is None else argv
     if not argv:
         return interactive_menu()

@@ -11,9 +11,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def run(command: list[str], cwd: Path = ROOT) -> None:
     print("+", " ".join(command))
-    result = subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        text=True,
+        encoding="utf-8",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
     print(result.stdout, end="")
     if result.returncode:
         raise SystemExit(result.returncode)
@@ -26,7 +40,14 @@ def run_python(*args: str, cwd: Path = ROOT) -> None:
 def run_python_capture(*args: str, cwd: Path = ROOT) -> str:
     command = [sys.executable, *args]
     print("+", " ".join(command))
-    result = subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        text=True,
+        encoding="utf-8",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
     print(result.stdout, end="")
     if result.returncode:
         raise SystemExit(result.returncode)
@@ -36,7 +57,14 @@ def run_python_capture(*args: str, cwd: Path = ROOT) -> str:
 def run_python_expect_failure(*args: str, cwd: Path = ROOT) -> None:
     command = [sys.executable, *args]
     print("+", " ".join(command))
-    result = subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        text=True,
+        encoding="utf-8",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
     print(result.stdout, end="")
     if result.returncode == 0:
         raise SystemExit("command unexpectedly succeeded")
@@ -54,7 +82,15 @@ def run_launcher(launcher: Path, args: list[str]) -> None:
     if sys.platform == "win32":
         command_line = subprocess.list2cmdline([str(launcher), *args])
         print("+", command_line)
-        result = subprocess.run(command_line, cwd=ROOT, shell=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        result = subprocess.run(
+            command_line,
+            cwd=ROOT,
+            shell=True,
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
         print(result.stdout, end="")
         if result.returncode:
             raise SystemExit(result.returncode)
@@ -63,6 +99,7 @@ def run_launcher(launcher: Path, args: list[str]) -> None:
 
 
 def main() -> int:
+    configure_stdio()
     with tempfile.TemporaryDirectory(prefix="aps-smoke-") as raw_temp:
         temp = Path(raw_temp)
         project = temp / "source-project"
