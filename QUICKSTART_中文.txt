@@ -9,8 +9,8 @@ git add .
 git commit -m "Configure APS distribution"
 git push
 
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.1.0
+git push origin v1.1.0
 
 之后任何机器：
 

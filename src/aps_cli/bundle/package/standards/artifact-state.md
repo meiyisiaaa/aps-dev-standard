@@ -1,8 +1,8 @@
 # AI 项目 Artifact & State 标准（Project Artifact & State Standard）
 
-**Standard Version:** `1.0.0`  
+**Standard Version:** `1.1.0`<br>
 **Status:** `ACTIVE`  
-**Companion Lifecycle Standard:** `1.0.0`
+**Companion Lifecycle Standard:** `1.1.0`
 
 > 本标准约束 AI 在项目中创建、读取、更新、验证、同步、迁移和归档 Artifact 与项目状态。  
 > `.ai/standards/lifecycle.md`定义生命周期与执行 Contract；本标准定义项目状态如何持久化以及哪个 Source of Truth 具有权威性。
@@ -448,7 +448,7 @@ Reference UI 确认
 
 ```yaml
 schema_version: 1
-standard_version: "1.0.0"
+standard_version: "1.1.0"
 revision: 1
 
 cycle: CYCLE-001
@@ -1498,4 +1498,3 @@ CI 可重新生成的中间产物
 ```
 
 `.ai/state.yaml` 不得因每次 Session 启动、心跳或无语义变化的验证而更新；只有 Stage / Gate / Scope / blocker / Change 等项目治理状态变化时才修改，避免提交噪声。
-
