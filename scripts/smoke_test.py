@@ -105,6 +105,9 @@ def main() -> int:
         state = project / ".ai" / "state.yaml"
         state.write_text((project / ".ai" / "templates" / "state.yaml").read_text(encoding="utf-8"), encoding="utf-8")
         run_python("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
+        initial_status = run_python_capture("aps.py", "status", str(project))
+        if "Next action:" not in initial_status:
+            raise SystemExit("status did not provide a next action")
         state.write_text(state.read_text(encoding="utf-8").replace("cycle: CYCLE-001", "cycle: CYCLE-002"), encoding="utf-8")
         (project / ".ai" / "registry.yaml").write_text(
             (project / ".ai" / "templates" / "registry.yaml").read_text(encoding="utf-8"),
@@ -118,7 +121,7 @@ def main() -> int:
         decision_path.write_text(
             json.dumps(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "id": "DEC-001",
                     "status": "PENDING",
                     "cycle": "CYCLE-002",
@@ -126,6 +129,14 @@ def main() -> int:
                     "input_type": "single_select",
                     "question": "选择产品入口",
                     "why_now": "两个方向会导致不同产品路线",
+                    "decision_card": {
+                        "impact": {
+                            "code": "影响入口和核心路由实现",
+                            "documentation": "需要更新产品方向和使用说明",
+                            "time": "约 1-2 个工作日",
+                        },
+                        "confirmation_method": "回复 A 或 B，并说明理由",
+                    },
                     "options": [
                         {
                             "id": "A",
@@ -151,8 +162,8 @@ def main() -> int:
             encoding="utf-8",
         )
         request_output = run_python_capture("aps.py", "decision", "request", str(decision_path), str(project))
-        if "explain each option's pros/cons" not in request_output:
-            raise SystemExit("decision request did not require per-option tradeoff analysis")
+        if "decision card" not in request_output or "pros/cons" not in request_output:
+            raise SystemExit("decision request did not require a complete decision card")
         run_python("aps.py", "decision", "list", str(project))
         status_output = run_python_capture("aps.py", "status", str(project))
         if "Pending decisions: DEC-001" not in status_output:
@@ -166,7 +177,7 @@ def main() -> int:
         if "pending_decision_refs: []" not in state_text or "user_decision" in state_text:
             raise SystemExit("decision answer did not clear the pending blocker")
         decisions = (project / ".ai" / "decisions.md").read_text(encoding="utf-8")
-        if "## DEC-001" not in decisions or "Decision: B" not in decisions:
+        if "## DEC-001" not in decisions or "Decision: B" not in decisions or "Impact:" not in decisions or "Confirmation:" not in decisions:
             raise SystemExit("decision answer was not written to the decision log")
         run_python_expect_failure("aps.py", "decision", "answer", "DEC-001", "A", str(project))
 
@@ -174,7 +185,7 @@ def main() -> int:
         multi_path.write_text(
             json.dumps(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "id": "DEC-002",
                     "status": "PENDING",
                     "cycle": "CYCLE-002",
@@ -182,12 +193,21 @@ def main() -> int:
                     "input_type": "multi_select",
                     "question": "选择需要保留的能力",
                     "why_now": "多个能力可以独立组合",
+                    "decision_card": {
+                        "impact": {
+                            "code": "影响能力开关和组合逻辑",
+                            "documentation": "更新能力清单",
+                            "time": "约半天",
+                        },
+                        "confirmation_method": "回复要保留的选项 ID",
+                    },
                     "options": [
-                        {"id": "A", "title": "能力 A"},
-                        {"id": "B", "title": "能力 B"},
-                        {"id": "C", "title": "能力 C"},
-                        {"id": "D", "title": "能力 D"},
+                        {"id": "A", "title": "能力 A", "tradeoffs": ["优点：收益明确", "缺点：增加维护面"]},
+                        {"id": "B", "title": "能力 B", "tradeoffs": ["优点：实现简单", "缺点：覆盖范围较小"]},
+                        {"id": "C", "title": "能力 C", "tradeoffs": ["优点：扩展性好", "缺点：验证成本较高"]},
+                        {"id": "D", "title": "能力 D", "tradeoffs": ["优点：可暂缓投入", "缺点：当前价值无法兑现"]},
                     ],
+                    "recommended": "A",
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -208,7 +228,7 @@ def main() -> int:
         cancel_path.write_text(
             json.dumps(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "id": "DEC-003",
                     "status": "PENDING",
                     "cycle": "CYCLE-002",
@@ -216,7 +236,19 @@ def main() -> int:
                     "input_type": "approval",
                     "question": "是否继续该实验",
                     "why_now": "实验方向已被范围调整取代",
-                    "options": [{"id": "YES", "title": "继续"}, {"id": "NO", "title": "停止"}],
+                    "decision_card": {
+                        "impact": {
+                            "code": "影响实验任务和相关分支",
+                            "documentation": "更新实验记录",
+                            "time": "取消可立即释放时间",
+                        },
+                        "confirmation_method": "回复 YES 或 NO",
+                    },
+                    "options": [
+                        {"id": "YES", "title": "继续", "tradeoffs": ["优点：保留已有投入", "缺点：偏离当前范围"]},
+                        {"id": "NO", "title": "停止", "tradeoffs": ["优点：减少浪费", "缺点：已有实验不再延续"]},
+                    ],
+                    "recommended": "NO",
                 },
                 ensure_ascii=False,
                 indent=2,

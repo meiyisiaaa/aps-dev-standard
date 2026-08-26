@@ -266,8 +266,9 @@ def _validate_request(data: Any, *, pending_only: bool = True) -> dict[str, Any]
     ref = data.get("id")
     if not isinstance(ref, str) or not DECISION_ID_RE.fullmatch(ref):
         raise DecisionError("decision request id must match DEC-*")
-    if data.get("schema_version") != 1:
-        raise DecisionError("decision request schema_version must be 1")
+    schema_version = data.get("schema_version")
+    if schema_version not in {1, 2}:
+        raise DecisionError("decision request schema_version must be 1 or 2")
     status = data.get("status")
     if status not in {"PENDING", "RESOLVED", "CANCELLED"}:
         raise DecisionError("decision request status is invalid")
@@ -294,11 +295,36 @@ def _validate_request(data: Any, *, pending_only: bool = True) -> dict[str, Any]
         if option_id in option_ids:
             raise DecisionError(f"duplicate decision option id: {option_id}")
         option_ids.append(option_id)
+        if schema_version == 2:
+            tradeoffs = option.get("tradeoffs")
+            valid_tradeoffs = (
+                isinstance(tradeoffs, str) and bool(tradeoffs.strip())
+            ) or (
+                isinstance(tradeoffs, list)
+                and bool(tradeoffs)
+                and all(isinstance(item, str) and item.strip() for item in tradeoffs)
+            )
+            if not valid_tradeoffs:
+                raise DecisionError(f"decision option {option_id} must include tradeoffs")
     if input_type in {"single_select", "multi_select", "ranking", "approval"} and not option_ids:
         raise DecisionError(f"decision input_type {input_type} requires options")
     recommended = data.get("recommended")
     if recommended is not None and recommended not in option_ids:
         raise DecisionError("decision request recommended option is not present")
+    if schema_version == 2:
+        if "recommended" not in data:
+            raise DecisionError("decision request recommended option is required")
+        card = data.get("decision_card")
+        if not isinstance(card, dict):
+            raise DecisionError("decision request decision_card is required")
+        impact = card.get("impact")
+        if not isinstance(impact, dict) or any(
+            not isinstance(impact.get(key), str) or not impact[key].strip()
+            for key in ("code", "documentation", "time")
+        ):
+            raise DecisionError("decision_card impact must include code, documentation, and time")
+        if not isinstance(card.get("confirmation_method"), str) or not card["confirmation_method"].strip():
+            raise DecisionError("decision_card confirmation_method is required")
     for key in ("evidence_refs", "affected_areas"):
         if key in data and (not isinstance(data[key], list) or not all(isinstance(item, str) for item in data[key])):
             raise DecisionError(f"decision request {key} must be an array of strings")
@@ -371,7 +397,7 @@ def register_request(project: Path, request_file: Path) -> int:
         _bump_state(state, "aps-decision")
         _save_state(state_path, state)
     print(f"OK    decision pending: {request['id']}")
-    print(f"NEXT  In the current conversation, explain each option's pros/cons before asking for an answer; then run `aps decision answer {request['id']} <ANSWER>`. ")
+    print(f"NEXT  In the current conversation, present a decision card (why now, per-option pros/cons, code/docs/time impact, and confirmation method) before asking for an answer; then run `aps decision answer {request['id']} <ANSWER>`. ")
     return 0
 
 
@@ -414,11 +440,26 @@ def _decision_entry(request: dict[str, Any], selected: list[str], display: str, 
     )
     affected = ", ".join(request.get("affected_areas", [])) or "未指定"
     reason_text = reason.strip() or f"用户确认：{display}"
-    tradeoff = "; ".join(
-        str(option.get("tradeoffs", "")).strip()
-        for option in request["options"]
-        if option["id"] in selected and option.get("tradeoffs")
-    ) or "见对应 Stage Artifact"
+    tradeoff_items: list[str] = []
+    for option in request["options"]:
+        if option["id"] not in selected:
+            continue
+        value = option.get("tradeoffs")
+        if isinstance(value, list):
+            tradeoff_items.extend(str(item).strip() for item in value if str(item).strip())
+        elif value:
+            tradeoff_items.append(str(value).strip())
+    tradeoff = "; ".join(tradeoff_items) or "见对应 Stage Artifact"
+    card = request.get("decision_card")
+    card_lines = ""
+    if isinstance(card, dict) and isinstance(card.get("impact"), dict):
+        impact = card["impact"]
+        card_lines = (
+            f"Impact: Code: {impact.get('code', '未指定')}; "
+            f"Documentation: {impact.get('documentation', '未指定')}; "
+            f"Time: {impact.get('time', '未指定')}\n"
+            f"Confirmation: {card.get('confirmation_method', '未指定')}\n"
+        )
     return (
         f"## {request['id']}\n\n"
         f"Date: {date}\n"
@@ -427,6 +468,7 @@ def _decision_entry(request: dict[str, Any], selected: list[str], display: str, 
         f"Decision: {display}\n"
         f"Reason: {reason_text}\n"
         f"Trade-off: {tradeoff}\n"
+        f"{card_lines}"
         f"Affected Areas: {affected}\n"
         f"Revisit Condition: 由 Change Control 或新的有效证据触发。\n\n"
     )

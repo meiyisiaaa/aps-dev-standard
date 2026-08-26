@@ -180,6 +180,16 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
         report.pass_("research results require conversational delivery")
     else:
         report.error("research results are not required in the current conversation")
+    stage_brief_markers = ("Stage User Brief", "目标", "输入", "已完成", "未完成", "用户决策", "确认影响", "验证结果")
+    artifact_contract_markers = ("Artifact Contract", "Purpose", "Inputs", "Outputs", "Acceptance Criteria", "Current Status", "Blocking Decisions", "Next Stage")
+    if all(marker in life + "\n" + art + "\n" + boot for marker in stage_brief_markers):
+        report.pass_("each Stage requires a user brief")
+    else:
+        report.error("Stage User Brief contract is incomplete")
+    if all(marker in art for marker in artifact_contract_markers):
+        report.pass_("Stage Artifacts require acceptance contracts")
+    else:
+        report.error("Artifact Contract is incomplete")
 
     if "PENDING USER DECISION" in life or "PENDING USER DECISION" in boot:
         report.error("legacy pseudo GateStatus 'PENDING USER DECISION' remains in executable standard/prompt")
@@ -318,11 +328,17 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
     if decision_template.is_file():
         try:
             sample = json.loads(decision_template.read_text(encoding="utf-8"))
-            required = {"schema_version", "id", "status", "cycle", "stage", "input_type", "question", "why_now", "options"}
+            required = {"schema_version", "id", "status", "cycle", "stage", "input_type", "question", "why_now", "options", "decision_card"}
             if not required.issubset(sample):
                 report.error(f"decision request template missing keys: {sorted(required - set(sample))}")
+            elif sample.get("schema_version") != 2:
+                report.error("decision request template must use schema_version 2")
             elif sample.get("status") != "PENDING":
                 report.error("decision request template must start in PENDING status")
+            elif any(not option.get("tradeoffs") for option in sample.get("options", []) if isinstance(option, dict)):
+                report.error("decision request template options must include tradeoffs")
+            elif not isinstance(sample.get("decision_card"), dict):
+                report.error("decision request template must include decision_card")
             else:
                 report.pass_("decision request template parses and is pending")
         except (OSError, json.JSONDecodeError) as exc:

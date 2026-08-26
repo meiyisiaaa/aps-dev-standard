@@ -81,6 +81,8 @@ aps decision request .ai/cycles/CYCLE-001/stages/01-idea/decision-requests/DEC-0
 
 Ask the user in the current conversation with a structured question. Before asking for the answer, explain every option's advantages, disadvantages, fit, and main risks; distinguish evidence from inference when relevant. If you recommend one, explain why and what evidence would change the recommendation. Keep the full candidate set in the Decision Request; multi-select, ranking, free-text, numeric, and larger decisions may use staged prompts or free-form conversation. Record the answer with:
 
+Each new Decision Request is a Decision Card: it records why the decision is needed, the recommendation and per-option tradeoffs, the code/documentation/time impact, and the exact confirmation method. Existing legacy requests remain answerable and should be enriched before they are presented again.
+
 ```bash
 aps decision answer DEC-001 A
 ```
@@ -94,6 +96,8 @@ aps decision cancel DEC-001 --reason "scope changed"
 ```
 
 After switching conversations, run `aps status` or `aps resume --no-launch` to print the current Cycle, blockers, pending decisions, and next action. For Market / Product Research, answer the original question directly in the current conversation, analyze the evidence, then keep the full report in the Stage Artifact and expose the user-facing summary with `aps research brief <ARTIFACT>`.
+
+Before ending, pausing, blocking, or handing off any Stage, output a one-page Stage User Brief in the current conversation with: goal, inputs, completed work, incomplete work, user decisions, confirmation impact, and verification results. The Stage Artifact must also contain or reference an Artifact Contract with its purpose, inputs, outputs, acceptance criteria, current status, blocking decisions, and next stage. A written document alone does not mean the Stage is complete.
 
 ## Temporary use before repository configuration
 

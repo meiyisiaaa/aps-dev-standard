@@ -170,12 +170,31 @@ def _runtime_summary(root: Path) -> list[str]:
         elif blocker:
             lines.append(f"Blocker: {blocker}")
     next_action = state.get("next_action")
-    if next_action not in (None, "", "null"):
-        if isinstance(next_action, str):
-            rendered = next_action
+    if next_action in (None, "", "null"):
+        if pending:
+            next_action = (
+                f"在当前对话完成 {', '.join(pending)} 的决策卡分析并回答，"
+                f"然后运行 `aps decision answer {pending[0]} <ANSWER>`。"
+            )
+        elif blockers:
+            next_action = "解决以上 blocker，并重新运行 `aps status`。"
+        elif state.get("stage_status") == "COMPLETE" or gate == "PASS":
+            next_action = "读取 Transition Contract，进入下一 Stage。"
+        elif gate == "REVISE":
+            next_action = "按 Failure Route 修复当前 Stage，并重新验证。"
+        elif gate == "HOLD":
+            next_action = "确认等待条件或恢复当前 Stage。"
+        elif gate == "STOP":
+            next_action = "当前 Cycle 已停止，不执行后续 Stage。"
+        elif state.get("stage_type") == "GATED":
+            next_action = "完成当前 Stage 的 Artifact、验收条件和验证，再更新 Gate。"
         else:
-            rendered = json.dumps(next_action, ensure_ascii=False)
-        lines.append(f"Next action: {rendered}")
+            next_action = "读取当前 Stage Contract 和 Artifact，继续 Required Actions。"
+    if isinstance(next_action, str):
+        rendered = next_action
+    else:
+        rendered = json.dumps(next_action, ensure_ascii=False)
+    lines.append(f"Next action: {rendered}")
     return lines
 
 

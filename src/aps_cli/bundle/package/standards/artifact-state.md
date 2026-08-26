@@ -56,6 +56,21 @@ Gate / Stage
 
 不要求把所有字段机械写进每个文件；可以由 Registry、目录结构或工具维护，但必须可查询。
 
+每个 Stage 的主 Artifact MUST 包含或引用一个 Artifact Contract；同一 Stage 有多个产物时，由主 Artifact 统一绑定，避免在每个文件重复维护：
+
+```text
+Artifact
+├── 目的 / Purpose
+├── 输入 / Inputs
+├── 输出 / Outputs
+├── 验收条件 / Acceptance Criteria
+├── 当前状态 / Current Status
+├── 阻塞决策 / Blocking Decisions
+└── 下一阶段 / Next Stage
+```
+
+验收条件必须是可检查的结果或证据引用；仅写完文档不代表满足验收。未完成验收或仍有阻塞决策时，Artifact / Stage 不得标记为 COMPLETE 或通过 Gate。
+
 ---
 
 # 1. 总规则
@@ -831,12 +846,12 @@ EXECUTION_LOOP / OBSERVATION_LOOP / ROUTER Stage 按 Lifecycle Standard 写 Tran
 应输出：
 
 ```text
-问题是什么
-为什么现在必须决定
-有哪些选项
-每个选项的主要影响
-AI 推荐
-需要用户确认什么
+决策卡
+为什么需要决策
+每个选项的优点、缺点、适用条件和主要风险
+推荐选项及推荐依据
+对代码、文档、时间的影响
+明确确认方式
 ```
 
 例如：
@@ -892,6 +907,8 @@ ranking
 approval
 matrix
 ```
+
+新建的 Decision Request 使用 schema version 2，必须包含 Decision Card；已有 schema version 1 的历史请求可以继续查看、回答或取消，但再次展示前应补齐决策卡字段。
 
 完整候选项、证据引用、推荐项和取舍必须保留在 Decision Request 中；`.ai/state.yaml` 只保存 `user_decision` blocker 和 `pending_decision_refs`，不复制决策正文。
 

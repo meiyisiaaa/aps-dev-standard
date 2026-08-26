@@ -21,16 +21,16 @@
     ".ai/templates/design-system-skill/references/README.md"
   ],
   "payload_sha256": {
-    "bootstrap/bootstrap-prompt.txt": "83f25bc809bff31b491c446313f6eadaf68e80340563a56d1a03f55f7a56bb74",
+    "bootstrap/bootstrap-prompt.txt": "45a856a71e5df196bc957c1024470504b45e729e9a88b27aa4dbeec397f6ec00",
     "bootstrap/rebaseline-existing-project.txt": "146c4e399d773310088a8317f89062461463516253f3b8396e20237ec2a524b7",
     "gitignore.fragment": "48dcd6fba9419b86a90a332de00eada9ade22ab5bfb3d23314241c675057c5c6",
-    "schemas/decision-request.schema.json": "71472df5839b5b77ae89e46d74621468b4bb869b42b9dc2c45466548a77c0e9a",
+    "schemas/decision-request.schema.json": "191784897b32339f1734e70cefdd96adafe633674c217ddc58e164457ff3f933",
     "schemas/registry.schema.json": "46a4f5fbbafb9bf7d0f5be9476add4c9462edaf92d4acd7243dfb74d7a94607a",
     "schemas/state.schema.json": "32c316514b9e6cbf94ea0c76e89238ddb0b774abb22f5f77c4eef12dad07bdcd",
-    "standards/artifact-state.md": "fc51fe497de5b8bf1338aac718b612cb53dd96fc414d62ab55f7b8694cf1739c",
-    "standards/lifecycle.md": "12918494116f5d80bd1a30d4f8333cc08bd4303525a128a5581c53d6a9d28033",
-    "templates/AGENTS.block.md": "3f9a39b315d88f55556d3b9f88e9f3985e8dc63d15b0ff8471a04a66789d8ecb",
-    "templates/decision-request.json": "511db1d63f7b22b7bc5bdc02e2bfc88508f706839800a05a3bebef37aa2c63d3",
+    "standards/artifact-state.md": "21ee70b333550ae16349a1e141b7ebd6344a99bd44cac1b518ff836c12198b4b",
+    "standards/lifecycle.md": "65f7fdd04c43674fb6ef816728cac186863106a1c85f11eabf0c1a6973425528",
+    "templates/AGENTS.block.md": "bedc58f82a1f64a6dd4d842bb5a43edd6cdb091be3ab336abea9194577539c4c",
+    "templates/decision-request.json": "079131f4d3153a48b8e4d5ade6eff410bdcc33a98d3a979bc156969305167af0",
     "templates/decisions.md": "9414c3309cf6eb96b63aff195a63ed81c59805236dde3270e6f29ae51c776916",
     "templates/design-system-skill/evals/README.md": "f1f7e3efe25141a15a9d9e8bd214bf9f195bd85b16a062eaf149cdcd2958d736",
     "templates/design-system-skill/references/README.md": "afa731bf787d2833a289e599668d3a53c3f9dd2d40f254e8f99c4455c02768df",
@@ -38,6 +38,6 @@
     "templates/registry.yaml": "0ed1b4f41568236de406a0d23e9160795bfd30f587feda217c2cf5825eb8e1de",
     "templates/runtime-host.yaml": "fdd07ee75851a3985f9f2c7437f18471b07a7a1eafe1ba4bba7c60ab54cafdb9",
     "templates/state.yaml": "e74099cb5f20ee2772bb2de26db13082dd72b0ce6a9328ba1b92656c4146b415",
-    "tools/standards-lint.py": "cfc6ec0ee3765470df985779c4e74918a7c6ae0e6fb6586641704d7c76c848e0"
+    "tools/standards-lint.py": "01b62eea9d3bb1ed36a83c8794069ae93d59705ee4c4e9cdb616edd984a1046e"
   }
 }
