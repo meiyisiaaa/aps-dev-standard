@@ -58,8 +58,6 @@ aps decision cancel DEC-001 --reason "范围已调整"
 
 以下 Stage 进入时必须先打开 Codex Plan 模式：01、05、06、07、08、09、10、13、14、15、16、20；Stage 22 有 Active Change 时也必须打开。计划确认后可切回普通模式执行。`aps status` 会显示 `Mode gate`；Codex Host 不会在未满足要求时自动启动普通会话。
 
-市场 / 产品调研完成后，先在当前对话直接回答原始问题，再分析关键证据、限制和建议，最后使用 `aps research brief <调研 Artifact>` 输出摘要；完整报告仍保留在 Stage Artifact。
-
 保护规则：
 - 不要重复执行 init；已有 APS 文件时会拒绝。
 - resume 不会重复安装或升级 Standard。
