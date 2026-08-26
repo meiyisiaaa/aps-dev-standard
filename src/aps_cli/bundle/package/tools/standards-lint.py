@@ -284,6 +284,8 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
         root / ".ai" / "registry.yaml",
         root / ".ai" / "schemas" / "state.schema.json",
         root / ".ai" / "schemas" / "registry.schema.json",
+        root / ".ai" / "schemas" / "decision-request.schema.json",
+        root / ".ai" / "templates" / "decision-request.json",
     ]
     for p in required_files:
         if p.exists():
@@ -291,7 +293,11 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
         else:
             report.error(f"missing project runtime source: {p.relative_to(root)}")
 
-    for p in [root / ".ai" / "schemas" / "state.schema.json", root / ".ai" / "schemas" / "registry.schema.json"]:
+    for p in [
+        root / ".ai" / "schemas" / "state.schema.json",
+        root / ".ai" / "schemas" / "registry.schema.json",
+        root / ".ai" / "schemas" / "decision-request.schema.json",
+    ]:
         if not p.is_file():
             continue
         try:
@@ -302,6 +308,20 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
                 report.pass_(f"JSON schema parses: {p.relative_to(root)}")
         except (OSError, json.JSONDecodeError) as exc:
             report.error(f"cannot parse JSON schema {p.relative_to(root)}: {exc}")
+
+    decision_template = root / ".ai" / "templates" / "decision-request.json"
+    if decision_template.is_file():
+        try:
+            sample = json.loads(decision_template.read_text(encoding="utf-8"))
+            required = {"schema_version", "id", "status", "cycle", "stage", "input_type", "question", "why_now", "options"}
+            if not required.issubset(sample):
+                report.error(f"decision request template missing keys: {sorted(required - set(sample))}")
+            elif sample.get("status") != "PENDING":
+                report.error("decision request template must start in PENDING status")
+            else:
+                report.pass_("decision request template parses and is pending")
+        except (OSError, json.JSONDecodeError) as exc:
+            report.error(f"cannot parse decision request template: {exc}")
 
     state = root / ".ai" / "state.yaml"
     if state.is_file():

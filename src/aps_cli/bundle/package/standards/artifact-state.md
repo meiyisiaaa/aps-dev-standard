@@ -1,8 +1,8 @@
 # AI 项目 Artifact & State 标准（Project Artifact & State Standard）
 
-**Standard Version:** `1.1.0`<br>
+**Standard Version:** `1.2.0`<br>
 **Status:** `ACTIVE`  
-**Companion Lifecycle Standard:** `1.1.0`
+**Companion Lifecycle Standard:** `1.2.0`
 
 > 本标准约束 AI 在项目中创建、读取、更新、验证、同步、迁移和归档 Artifact 与项目状态。  
 > `.ai/standards/lifecycle.md`定义生命周期与执行 Contract；本标准定义项目状态如何持久化以及哪个 Source of Truth 具有权威性。
@@ -448,7 +448,7 @@ Reference UI 确认
 
 ```yaml
 schema_version: 1
-standard_version: "1.1.0"
+standard_version: "1.2.0"
 revision: 1
 
 cycle: CYCLE-001
@@ -872,6 +872,39 @@ B. Auth.js
 同步相关阶段文档
 需要时同步 AGENTS.md
 ```
+
+### 10.1 Decision Request
+
+需要用户决策时，先在当前 Cycle 的当前 Stage 下创建结构化 Decision Request：
+
+```text
+.ai/cycles/<ACTIVE_CYCLE>/stages/<NN-stage>/decision-requests/DEC-XXX.json
+```
+
+请求格式由 `.ai/schemas/decision-request.schema.json` 约束。它可以表达：
+
+```text
+single_select
+multi_select
+free_text
+number
+ranking
+approval
+matrix
+```
+
+完整候选项、证据引用、推荐项和取舍必须保留在 Decision Request 中；`.ai/state.yaml` 只保存 `user_decision` blocker 和 `pending_decision_refs`，不复制决策正文。
+
+Host 交互优先级：
+
+```text
+Codex Plan 原生用户输入（仅限 Plan mode）
+→ Host 支持的结构化输入
+→ 对话中的结构化问题
+→ 手动 `aps decision answer`
+```
+
+Codex Plan 的一次提问可以只展示当前最小的一组单选项，但这只是 Host UI 限制，不是 APS 决策模型限制。选项超过 UI 能力时，必须分轮提问、改用自由输入或回退到对话，并保留完整候选集。
 
 ---
 

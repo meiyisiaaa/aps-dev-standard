@@ -1,6 +1,7 @@
 # Local/runtime-only AI Project Standard data
 .ai/runtime/hosts/
 .ai/.install.lock
+.ai/.decision.lock
 .ai/cache/
 .ai/logs/
 .ai/incoming/

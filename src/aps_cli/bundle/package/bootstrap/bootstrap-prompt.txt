@@ -22,6 +22,13 @@ Bootstrap 顺序：
 能够通过调研、代码、已有 Artifact 或已确认 Decision 确定的问题直接处理。
 遇到关键不确定、方案冲突、重大产品 / 技术 / UI 取舍、需要改变已确认内容或扩大 Scope 时，新增 `user_decision` blocker，由我决策。
 
+需要用户决策时：
+1. 在当前 Cycle / Stage 的 `decision-requests/DEC-XXX.json` 创建结构化 Decision Request，并保留完整候选项、证据、推荐项和取舍。
+2. 运行 `aps decision request <REQUEST-FILE>` 登记 blocker；没有 CLI 时按同一规则直接更新 `.ai/state.yaml`。
+3. 当前 Host 支持 Codex Plan 原生用户输入且当前任务处于 Plan mode 时，使用该 Host 能力询问（Codex Host 对应 `request_user_input`）；否则在对话中输出结构化问题。不要把 Codex Plan 一次提问的选项数量限制当成 APS 决策模型限制。
+4. 用户回答后运行 `aps decision answer <DECISION-ID> <ANSWER>`，或等价地写入 `.ai/decisions.md`、解除 blocker 并递增 state revision。
+5. 用户选择不等于 Gate PASS；完成 Artifact 和验证后，才按当前 Transition Contract 更新 Gate。
+
 涉及前端 / UI 时，必须从 Registry 解析 Design System Source、Visual Reference、Token / Component / Pattern / Motion Source 和项目级 Design System Agent Skill；按 Reuse → Compose → Extend → Create 执行。若 Skill 无法被当前 Host 发现或验证失败，先修复 Runtime / Adapter 或使用 Registry 中已记录 fallback。
 
 所有标记为 Artifact、状态变更或 Gate Evidence 的内容必须实际落盘并通过对应 Validation；只在聊天中输出不视为完成。

@@ -16,8 +16,8 @@ git push
 Then tag a release:
 
 ```bash
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
 When changing files under `src/aps_cli/bundle/package/`, refresh their manifest checksums before committing:
@@ -26,7 +26,7 @@ When changing files under `src/aps_cli/bundle/package/`, refresh their manifest 
 python scripts/build_release.py --refresh-manifest
 ```
 
-GitHub Actions builds `APS_CLI_1.1.0.zip` and its SHA-256 file and attaches them to the Release.
+GitHub Actions builds `APS_CLI_1.2.0.zip` and its SHA-256 file and attaches them to the Release.
 The online installers verify that SHA-256 file and fail closed when no verified Release asset is available.
 
 ## One-line install
@@ -68,6 +68,20 @@ aps rebaseline --confirm
 ```
 
 Repeating `resume` or a same-version `upgrade` is a no-op and should not dirty the project workspace. Do not use `init --force-mode` to bypass an existing project; use `resume` to adopt it.
+
+When a major product, technical, UX, or scope choice is required, create a structured Decision Request under the active Cycle and register it:
+
+```bash
+aps decision request .ai/cycles/CYCLE-001/stages/01-idea/decision-requests/DEC-001.json
+```
+
+In Codex Plan mode, use the native user-input prompt for the current smallest question. Keep the full candidate set in the Decision Request; multi-select, ranking, free-text, numeric, and larger decisions may use staged prompts or conversation fallback. Record the answer with:
+
+```bash
+aps decision answer DEC-001 A
+```
+
+Use `aps decision list` and `aps decision show DEC-001` to inspect pending requests. A selected option does not pass a Gate automatically; complete the required Artifact and Validation first.
 
 ## Temporary use before repository configuration
 

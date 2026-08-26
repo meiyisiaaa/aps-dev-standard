@@ -7,7 +7,7 @@
   "required": ["schema_version", "standard_version", "revision", "cycle", "stage", "stage_type", "stage_status", "gate_status", "blockers", "pending_decision_refs", "active_change_refs", "major_risk_refs"],
   "properties": {
     "schema_version": {"const": 1},
-    "standard_version": {"type": "string", "pattern": "^1\\.1\\."},
+    "standard_version": {"type": "string", "pattern": "^1\\.(1|2)\\."},
     "revision": {"type": "integer", "minimum": 1},
     "cycle": {"type": "string", "pattern": "^CYCLE-[0-9]{3,}$"},
     "stage": {"type": "integer", "minimum": 1, "maximum": 23},

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -91,7 +92,86 @@ def main() -> int:
         state.write_text((project / ".ai" / "templates" / "state.yaml").read_text(encoding="utf-8"), encoding="utf-8")
         run_python("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
         state.write_text(state.read_text(encoding="utf-8").replace("cycle: CYCLE-001", "cycle: CYCLE-002"), encoding="utf-8")
+        (project / ".ai" / "registry.yaml").write_text(
+            (project / ".ai" / "templates" / "registry.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
         run_python_expect_failure("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
+
+        decision_dir = project / ".ai" / "cycles" / "CYCLE-002" / "stages" / "01-idea" / "decision-requests"
+        decision_dir.mkdir(parents=True)
+        decision_path = decision_dir / "DEC-001.json"
+        decision_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "id": "DEC-001",
+                    "status": "PENDING",
+                    "cycle": "CYCLE-002",
+                    "stage": 1,
+                    "input_type": "single_select",
+                    "question": "选择产品入口",
+                    "why_now": "两个方向会导致不同产品路线",
+                    "options": [
+                        {"id": "A", "title": "方案 A", "summary": "快速验证"},
+                        {"id": "B", "title": "方案 B", "summary": "长期控制"},
+                    ],
+                    "recommended": "A",
+                    "evidence_refs": ["01_IDEA.md"],
+                    "affected_areas": ["Product DNA", "MVP"],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        run_python("aps.py", "decision", "request", str(decision_path), str(project))
+        run_python("aps.py", "decision", "list", str(project))
+        run_python("aps.py", "decision", "show", "DEC-001", str(project))
+        run_python("aps.py", "decision", "answer", "DEC-001", "B", str(project), "--reason", "长期控制更适合当前目标")
+        run_python("aps.py", "decision", "show", "DEC-001", str(project))
+        if json.loads(decision_path.read_text(encoding="utf-8"))["status"] != "RESOLVED":
+            raise SystemExit("decision request status was not resolved")
+        state_text = state.read_text(encoding="utf-8")
+        if "pending_decision_refs: []" not in state_text or "user_decision" in state_text:
+            raise SystemExit("decision answer did not clear the pending blocker")
+        decisions = (project / ".ai" / "decisions.md").read_text(encoding="utf-8")
+        if "## DEC-001" not in decisions or "Decision: B" not in decisions:
+            raise SystemExit("decision answer was not written to the decision log")
+        run_python_expect_failure("aps.py", "decision", "answer", "DEC-001", "A", str(project))
+
+        multi_path = decision_dir / "DEC-002.json"
+        multi_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "id": "DEC-002",
+                    "status": "PENDING",
+                    "cycle": "CYCLE-002",
+                    "stage": 1,
+                    "input_type": "multi_select",
+                    "question": "选择需要保留的能力",
+                    "why_now": "多个能力可以独立组合",
+                    "options": [
+                        {"id": "A", "title": "能力 A"},
+                        {"id": "B", "title": "能力 B"},
+                        {"id": "C", "title": "能力 C"},
+                        {"id": "D", "title": "能力 D"},
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        run_python("aps.py", "decision", "request", str(multi_path), str(project))
+        run_python("aps.py", "decision", "answer", "DEC-002", "A,C", str(project))
+        decisions = (project / ".ai" / "decisions.md").read_text(encoding="utf-8")
+        if "## DEC-002" not in decisions or "Decision: A, C" not in decisions:
+            raise SystemExit("multi-select decision answer was not recorded")
+        run_python("aps.py", "doctor", str(project), "--host", "generic")
 
         before_upgrade = snapshot_files(project)
         run_python("aps.py", "upgrade", str(project), "--host", "generic")

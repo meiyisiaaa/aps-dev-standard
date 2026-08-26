@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from . import __version__, STANDARD_VERSION
+from .decision import answer_request, list_requests, register_request, show_request
 from .installer import BEGIN_AGENTS, BEGIN_GITIGNORE, END_AGENTS, END_GITIGNORE, install_standard
 
 HOSTS = ("codex", "generic")
@@ -349,6 +350,22 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_decision_request(args: argparse.Namespace) -> int:
+    return register_request(args.project, args.request_file)
+
+
+def cmd_decision_list(args: argparse.Namespace) -> int:
+    return list_requests(args.project)
+
+
+def cmd_decision_show(args: argparse.Namespace) -> int:
+    return show_request(args.project, args.reference)
+
+
+def cmd_decision_answer(args: argparse.Namespace) -> int:
+    return answer_request(args.project, args.reference, args.answer, args.reason)
+
+
 def interactive_menu() -> int:
     root = Path.cwd().resolve()
     governed = is_governed(root)
@@ -431,6 +448,30 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("status", help="show lightweight project governance status")
     s.add_argument("project", nargs="?", default=".", type=Path)
     s.set_defaults(func=cmd_status)
+
+    s = sub.add_parser("decision", help="register and resolve structured user decisions")
+    decision_sub = s.add_subparsers(dest="decision_command", required=True)
+
+    d = decision_sub.add_parser("request", help="register a pending Decision Request")
+    d.add_argument("request_file", type=Path)
+    d.add_argument("project", nargs="?", default=".", type=Path)
+    d.set_defaults(func=cmd_decision_request)
+
+    d = decision_sub.add_parser("list", help="list pending Decision Requests")
+    d.add_argument("project", nargs="?", default=".", type=Path)
+    d.set_defaults(func=cmd_decision_list)
+
+    d = decision_sub.add_parser("show", help="show a Decision Request")
+    d.add_argument("reference")
+    d.add_argument("project", nargs="?", default=".", type=Path)
+    d.set_defaults(func=cmd_decision_show)
+
+    d = decision_sub.add_parser("answer", help="record a selected Decision Request answer")
+    d.add_argument("reference")
+    d.add_argument("answer")
+    d.add_argument("project", nargs="?", default=".", type=Path)
+    d.add_argument("--reason", default="", help="optional reason recorded with the decision")
+    d.set_defaults(func=cmd_decision_answer)
     return p
 
 

@@ -1,8 +1,8 @@
 # AI 产品开发生命周期标准（Full-Cycle Engineering Standard）
 
-**Standard Version:** `1.1.0`<br>
+**Standard Version:** `1.2.0`<br>
 **Status:** `ACTIVE`  
-**Companion Artifact Standard:** `1.1.0`
+**Companion Artifact Standard:** `1.2.0`
 
 > 本标准定义 AI 参与产品开发时的统一生命周期、Stage Contract、Gate、Agent Runtime、Skill、验证、追踪和变更规则。  
 > AI 必须按阶段推进；不得用未确认假设替代重大决策，不得绕过关键 Gate，不得把聊天内容视为已经落盘的项目状态。  
@@ -352,6 +352,8 @@ Regression
 ```
 
 可以通过调研、代码、文档或现有上下文确定的问题，不向用户提问。
+
+决策交互不限制真实候选项数量或输入类型。Decision Request MUST 保留完整候选集；Codex Plan 的一次原生提问若只能展示少量单选项，使用分轮筛选、自由输入或对话降级，不得静默删除候选项或把多选、排序或数值约束伪装成单选。
 
 ## 0.12 研究结论标记
 
@@ -1467,7 +1469,7 @@ Reuse Base Research
 已有 UI（若有）
 ```
 
-如果视觉方向仍存在多个明显不同选择，先提出 2~3 个方向，由用户决策，不直接固化。
+如果视觉方向仍存在多个明显不同选择，先记录完整候选集和取舍，再根据 Host 能力选择 Plan 单选、分轮筛选或自由输入；不得为了适配一次弹窗静默合并或删除视觉方向。
 
 ### 10.2 Visual Direction
 

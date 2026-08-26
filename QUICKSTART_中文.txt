@@ -9,8 +9,8 @@ git add .
 git commit -m "Configure APS distribution"
 git push
 
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.2.0
+git push origin v1.2.0
 
 之后任何机器：
 
@@ -34,6 +34,20 @@ aps rebaseline  旧项目从 Stage 01 重新审查（需运行状态和 --confir
 aps doctor      项目体检
 aps status      查看状态
 aps upgrade     升级 Standard
+
+需要重大产品、技术、UX 或 Scope 决策时：
+
+aps decision request .ai/cycles/CYCLE-001/stages/01-idea/decision-requests/DEC-001.json
+
+Codex Plan 模式优先使用原生决策输入。完整候选项保留在 Decision Request 中，不限制为 2~3 个选项；多选、排序、自由输入或复杂决策可分轮或回退到对话。
+
+用户回答后记录：
+
+aps decision answer DEC-001 A
+aps decision list
+aps decision show DEC-001
+
+用户选择不等于 Gate 通过，仍需完成 Artifact 和 Validation。
 
 保护规则：
 - 不要重复执行 init；已有 APS 文件时会拒绝。
