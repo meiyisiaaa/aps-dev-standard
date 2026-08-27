@@ -51,14 +51,16 @@ def _is_reparse_point(path: Path) -> bool:
     return is_reparse_point(path)
 
 
-def assert_no_reparse(path: Path) -> None:
+def assert_no_reparse(path: Path, *, allow_ancestor_links: bool = False) -> None:
+    first = True
     current = path
     while True:
-        if is_reparse_point(current):
+        if is_reparse_point(current) and (first or not allow_ancestor_links):
             raise RuntimeError(f"安装路径不能包含符号链接或 Windows reparse point：{current}")
         if current.parent == current:
             return
         current = current.parent
+        first = False
 
 
 def _assert_no_reparse(path: Path) -> None:
@@ -340,7 +342,7 @@ def install_standard(bundle: Path, root: Path, host: str = "codex", force_manage
     payload = bundle / "package"
 
     root = root.expanduser()
-    _assert_no_reparse(root)
+    assert_no_reparse(root, allow_ancestor_links=True)
     root = root.resolve()
     root.mkdir(parents=True, exist_ok=True)
     if not root.is_dir():

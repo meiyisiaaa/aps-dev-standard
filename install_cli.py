@@ -52,14 +52,16 @@ def is_reparse_point(path: Path) -> bool:
     return False
 
 
-def assert_no_reparse(path: Path) -> None:
+def assert_no_reparse(path: Path, *, allow_ancestor_links: bool = False) -> None:
+    first = True
     current = path
     while True:
-        if is_reparse_point(current):
+        if is_reparse_point(current) and (first or not allow_ancestor_links):
             raise RuntimeError(f"安装路径不能包含符号链接或 Windows reparse point：{current}")
         if current.parent == current:
             return
         current = current.parent
+        first = False
 
 
 def remove_path(path: Path) -> None:
@@ -152,7 +154,7 @@ def _install() -> int:
     src_root = Path(__file__).resolve().parent
     version = read_version(src_root / "VERSION")
     prefix = args.prefix.expanduser()
-    assert_no_reparse(prefix)
+    assert_no_reparse(prefix, allow_ancestor_links=True)
     prefix = prefix.resolve()
     share_root = prefix / "share"
     app_root = share_root / "aps-cli"

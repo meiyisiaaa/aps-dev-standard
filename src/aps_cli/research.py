@@ -22,7 +22,7 @@ REQUIRED_FIELDS = (
 
 def _project_root(project: Path) -> Path:
     candidate = project.expanduser()
-    assert_no_reparse(candidate)
+    assert_no_reparse(candidate, allow_ancestor_links=True)
     root = candidate.resolve()
     if not root.is_dir() or not (root / ".ai").is_dir():
         raise ResearchError("APS 项目状态目录不存在；请先在 Agent Host 完成 Bootstrap")
@@ -35,7 +35,7 @@ def _artifact_path(root: Path, artifact: Path) -> Path:
     candidate = artifact.expanduser()
     if not candidate.is_absolute():
         from_cwd = Path.cwd() / candidate
-        assert_no_reparse(from_cwd)
+        assert_no_reparse(from_cwd, allow_ancestor_links=True)
         from_cwd = from_cwd.resolve()
         if from_cwd.is_file():
             candidate = from_cwd
@@ -44,7 +44,7 @@ def _artifact_path(root: Path, artifact: Path) -> Path:
             assert_no_reparse(project_candidate)
             candidate = project_candidate.resolve()
     else:
-        assert_no_reparse(candidate)
+        assert_no_reparse(candidate, allow_ancestor_links=True)
         candidate = candidate.resolve()
     assert_no_reparse(candidate)
     cycles_path = root / ".ai" / "cycles"

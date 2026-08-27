@@ -20,6 +20,10 @@ PLAN_MODE_REQUIRED_STAGES = frozenset({1, 5, 6, 7, 8, 9, 10, 13, 14, 15, 16, 20}
 MANAGED_PATH_PREFIX = ".ai/"
 
 
+class ProjectBoundaryError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class Diagnostic:
     """An internal, non-persistent diagnostic with one recovery route."""
@@ -55,8 +59,13 @@ def bundle_dir() -> Path:
 
 def project_path(value: Path) -> Path:
     candidate = value.expanduser()
-    assert_no_reparse(candidate)
-    return candidate.resolve()
+    try:
+        assert_no_reparse(candidate, allow_ancestor_links=True)
+        root = candidate.resolve()
+        assert_no_reparse(root)
+        return root
+    except (OSError, RuntimeError) as exc:
+        raise ProjectBoundaryError(str(exc)) from exc
 
 
 def project_has_content(root: Path) -> bool:
@@ -1217,6 +1226,11 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\nOK    已取消。")
         return 130
+    except ProjectBoundaryError as exc:
+        print(f"FAIL  项目边界不安全：{exc}", file=sys.stderr)
+        print("原因：APS 不会跟随项目根目录的符号链接、reparse point 或错误路径。", file=sys.stderr)
+        print(f"NEXT  移除或重命名冲突路径后重试：`{command_hint(argv)}`", file=sys.stderr)
+        return 2
     except Exception as exc:
         command = getattr(args, "command", None)
         print(f"FAIL  {exc}", file=sys.stderr)

@@ -370,7 +370,7 @@ def _decision_lock(root: Path) -> Iterator[None]:
 
 def _root(project: Path) -> Path:
     candidate = project.expanduser()
-    assert_no_reparse(candidate)
+    assert_no_reparse(candidate, allow_ancestor_links=True)
     root = candidate.resolve()
     if not root.is_dir():
         raise DecisionError(f"项目目录不存在：{root}")
@@ -487,7 +487,7 @@ def _request_path(root: Path, path: Path) -> Path:
     assert_no_reparse(cycles_path)
     if not cycles_path.is_dir():
         raise DecisionError(f"APS Cycle 目录不存在：{cycles_path}")
-    assert_no_reparse(path)
+    assert_no_reparse(path, allow_ancestor_links=True)
     resolved = path.expanduser().resolve()
     cycles = cycles_path.resolve()
     assert_no_reparse(resolved)
