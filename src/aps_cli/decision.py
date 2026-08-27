@@ -145,6 +145,31 @@ def _parse_state(text: str) -> dict[str, Any]:
             index += 1
             continue
 
+        if key == "next_action":
+            action: dict[str, Any] = {}
+            cursor = index + 1
+            while cursor < len(lines):
+                child = lines[cursor]
+                if not child.strip() or child.lstrip().startswith("#"):
+                    cursor += 1
+                    continue
+                indentation = len(child) - len(child.lstrip(" "))
+                if indentation == 0:
+                    break
+                if indentation != 2 or child.lstrip().startswith("-") or ":" not in child:
+                    raise DecisionError(f"state.yaml 的 {key} 包含不受支持的嵌套数据")
+                action_key, separator, action_value = child.strip().partition(":")
+                if not separator or not action_key.strip():
+                    raise DecisionError(f"state.yaml 的 {key} 存在无效字段")
+                action_key = action_key.strip()
+                if action_key in action:
+                    raise DecisionError(f"state.yaml 的 {key} 存在重复字段：{action_key}")
+                action[action_key] = _parse_scalar(action_value)
+                cursor += 1
+            data[key] = action
+            index = cursor
+            continue
+
         items: list[Any] = []
         cursor = index + 1
         while cursor < len(lines):

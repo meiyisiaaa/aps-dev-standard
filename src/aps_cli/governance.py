@@ -290,10 +290,11 @@ def _registry_line_value(value: str) -> str:
 
 
 def _parse_registry_subset(text: str) -> dict[str, Any]:
-    """Parse the deliberately small mapping-only Registry YAML subset without PyYAML."""
+    """Parse the small Registry YAML mapping/sequence subset without PyYAML."""
     root: dict[str, Any] = {}
-    stack: list[tuple[int, dict[str, Any]]] = [(-1, root)]
-    for line_number, raw_line in enumerate(text.splitlines(), 1):
+    lines = text.splitlines()
+    stack: list[tuple[int, Any]] = [(-1, root)]
+    for line_number, raw_line in enumerate(lines, 1):
         if not raw_line.strip() or raw_line.lstrip().startswith("#"):
             continue
         if "\t" in raw_line[: len(raw_line) - len(raw_line.lstrip())]:
@@ -302,19 +303,38 @@ def _parse_registry_subset(text: str) -> dict[str, Any]:
         content = _registry_line_value(raw_line[indent:])
         if not content:
             continue
-        if content.startswith("-") or ":" not in content:
+        while len(stack) > 1 and indent <= stack[-1][0]:
+            stack.pop()
+        parent = stack[-1][1]
+        if content.startswith("-"):
+            if not isinstance(parent, list):
+                raise GovernanceError(f"registry.yaml 第 {line_number} 行列表位置无效")
+            item = content[1:].strip()
+            if not item:
+                raise GovernanceError(f"registry.yaml 第 {line_number} 行列表项为空")
+            parent.append(_registry_scalar(item))
+            continue
+        if ":" not in content or not isinstance(parent, dict):
             raise GovernanceError(f"registry.yaml 第 {line_number} 行不是受支持的映射字段")
         key, raw_value = (part.strip() for part in content.split(":", 1))
         if not key or not ID_RE.fullmatch(key):
             raise GovernanceError(f"registry.yaml 第 {line_number} 行字段名无效：{key}")
-        while len(stack) > 1 and indent <= stack[-1][0]:
-            stack.pop()
-        parent = stack[-1][1]
         if key in parent:
             raise GovernanceError(f"registry.yaml 第 {line_number} 行字段重复：{key}")
-        value = _registry_scalar(raw_value)
+        if raw_value.strip():
+            value = _registry_scalar(raw_value)
+        else:
+            next_indent = None
+            next_content = ""
+            for lookahead in lines[line_number:]:
+                if not lookahead.strip() or lookahead.lstrip().startswith("#"):
+                    continue
+                next_indent = len(lookahead) - len(lookahead.lstrip(" "))
+                next_content = _registry_line_value(lookahead[next_indent:])
+                break
+            value = [] if next_indent is not None and next_indent > indent and next_content.startswith("-") else {}
         parent[key] = value
-        if value == {} and not raw_value.strip():
+        if not raw_value.strip():
             stack.append((indent, value))
     return root
 

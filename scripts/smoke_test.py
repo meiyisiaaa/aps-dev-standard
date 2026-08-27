@@ -333,7 +333,7 @@ def main() -> int:
 
         manifest = project / ".ai" / "standard-manifest.json"
         manifest_before = manifest.read_bytes()
-        manifest.write_text(manifest.read_text(encoding="utf-8").replace('"version": "1.3.1"', '"version": "0.0.0"'), encoding="utf-8")
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace('"version": "1.3.2"', '"version": "0.0.0"'), encoding="utf-8")
         mismatch_output = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
         if "REFUSE" not in mismatch_output or "aps upgrade" not in mismatch_output:
             raise SystemExit("version mismatch resume did not provide recovery guidance")
@@ -381,6 +381,31 @@ def main() -> int:
             (project / ".ai" / "templates" / "decisions.md").read_text(encoding="utf-8"),
             encoding="utf-8",
         )
+        registry = project / ".ai" / "registry.yaml"
+        registry_before_sequences = registry.read_bytes()
+        registry.write_text(
+            registry.read_text(encoding="utf-8").replace(
+                "    load_policy: referenced-only\n  project_profile:",
+                "    load_policy: referenced-only\n    related_paths:\n      - .ai/decisions.md\n  project_profile:",
+            ),
+            encoding="utf-8",
+        )
+        sequence_registry_status = run_python_capture("aps.py", "status", str(project))
+        if "Managed conflicts: 0" not in sequence_registry_status:
+            raise SystemExit("Registry scalar sequence was not accepted")
+        registry.write_bytes(registry_before_sequences)
+        state_before_next_action = state.read_bytes()
+        state.write_text(
+            state.read_text(encoding="utf-8").replace(
+                "next_action: null",
+                'next_action:\n  action: "继续当前 Stage"\n  transition: "完成验证后更新 Gate"',
+            ),
+            encoding="utf-8",
+        )
+        nested_next_action_status = run_python_capture("aps.py", "status", str(project))
+        if "Runtime state: present" not in nested_next_action_status:
+            raise SystemExit("nested next_action was not accepted")
+        state.write_bytes(state_before_next_action)
         state_before_chinese = state.read_bytes()
         state.write_text(state.read_text(encoding="utf-8").replace("updated_by: coordinator", "updated_by: 协调器"), encoding="utf-8")
         utf8_fallback_lint = run_python_capture_env(
@@ -531,7 +556,7 @@ def main() -> int:
         registry_before = registry.read_bytes()
         registry.write_text(
             """schema_version: 1
-standard_version: "1.3.1"
+standard_version: "1.3.2"
 revision: 1
 sources:
   broken_source:
@@ -561,7 +586,7 @@ critical_skills: {}
         registry.write_bytes(registry_before)
         registry.write_text(
             """schema_version: 1
-standard_version: "1.3.1"
+standard_version: "1.3.2"
 revision: 1
 revision: 2
 sources:
@@ -929,7 +954,7 @@ critical_skills: {}
         shutil.copytree(ROOT / "src" / "aps_cli" / "bundle", unsafe_bundle)
         unsafe_manifest_path = unsafe_bundle / "package-manifest.json"
         unsafe_manifest = json.loads(unsafe_manifest_path.read_text(encoding="utf-8"))
-        unsafe_manifest["version"] = "../1.3.1"
+        unsafe_manifest["version"] = "../1.3.2"
         unsafe_manifest_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
         try:
             installer_module.validate_bundle(unsafe_bundle)
