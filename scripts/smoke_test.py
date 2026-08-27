@@ -266,6 +266,11 @@ def main() -> int:
         if "托管文件缺失" not in missing_file_status or "aps upgrade" not in missing_file_status:
             raise SystemExit("status did not report a missing managed file")
         managed_lifecycle.write_bytes(managed_lifecycle_bytes)
+        managed_lifecycle.write_bytes(managed_lifecycle_bytes + b"\nlocal smoke edit\n")
+        modified_file_status = run_python_expect_failure_capture("aps.py", "status", str(project))
+        if "托管文件已被本地修改" not in modified_file_status or "aps upgrade" not in modified_file_status:
+            raise SystemExit("status did not report a modified managed file")
+        managed_lifecycle.write_bytes(managed_lifecycle_bytes)
 
         nested = project / "nested"
         nested.mkdir()
@@ -309,13 +314,25 @@ def main() -> int:
             state.write_text(invalid_state, encoding="utf-8")
             invalid_status = run_python_expect_failure_capture("aps.py", "status", str(project))
             invalid_resume = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
-            if "Runtime state" not in invalid_status or "NORMAL" in invalid_status or "APS Agent Handoff" in invalid_resume:
+            invalid_doctor = run_python_expect_failure_capture("aps.py", "doctor", str(project), "--host", "generic", "--standard-only")
+            if (
+                "Runtime state" not in invalid_status
+                or "NORMAL" in invalid_status
+                or "APS Agent Handoff" in invalid_resume
+                or "state.yaml" not in invalid_doctor
+            ):
                 raise SystemExit("malformed state was treated as a normal resumable state")
         state.write_bytes(b"\xff\xfe\xfd")
         invalid_encoding_status = run_python_expect_failure_capture("aps.py", "status", str(project))
         invalid_encoding_resume = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
         if "Runtime state" not in invalid_encoding_status or "doctor --standard-only" not in invalid_encoding_status or "APS Agent Handoff" in invalid_encoding_resume:
             raise SystemExit("non-UTF8 state was not rejected with the state recovery path")
+        state.unlink()
+        state.mkdir()
+        invalid_state_path_doctor = run_python_expect_failure_capture("aps.py", "doctor", str(project), "--host", "generic", "--standard-only")
+        if "必须是普通文件" not in invalid_state_path_doctor or "aps doctor --standard-only" not in invalid_state_path_doctor:
+            raise SystemExit("non-file state path did not use the safe recovery path")
+        state.rmdir()
         state.write_text(normal_state, encoding="utf-8")
         state.write_text(normal_state.replace("stage: 1", "stage: 17").replace("stage_type: GATED", "stage_type: EXECUTION_LOOP").replace("gate_status: PENDING", "gate_status: null"), encoding="utf-8")
         normal_status = run_python_capture("aps.py", "status", str(project))
@@ -329,12 +346,22 @@ def main() -> int:
         codex_handoff = run_python_capture("aps.py", "init", str(temp / "codex-mode-project"), "--host", "codex", "--no-git")
         if "Plan mode is required" not in codex_handoff or "will not auto-launch" not in codex_handoff:
             raise SystemExit("Codex handoff did not block a normal session for a Plan-required Stage")
-        state.write_text(state.read_text(encoding="utf-8").replace("cycle: CYCLE-001", "cycle: CYCLE-002"), encoding="utf-8")
+        cycle_two_complete_wrong_stage = (
+            normal_state.replace("cycle: CYCLE-001", "cycle: CYCLE-002")
+            .replace("stage: 1", "stage: 22")
+            .replace("stage_type: GATED", "stage_type: ROUTER")
+            .replace("stage_status: ACTIVE", "stage_status: COMPLETE")
+            .replace("gate_status: PENDING", "gate_status: null")
+        )
+        state.write_text(cycle_two_complete_wrong_stage, encoding="utf-8")
         (project / ".ai" / "registry.yaml").write_text(
             (project / ".ai" / "templates" / "registry.yaml").read_text(encoding="utf-8"),
             encoding="utf-8",
         )
-        run_python_expect_failure("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
+        wrong_stage_rebaseline = run_python_expect_failure_capture("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
+        if "Stage 23" not in wrong_stage_rebaseline:
+            raise SystemExit("rebaseline accepted a completed non-Stage-23 cycle")
+        state.write_text(normal_state.replace("cycle: CYCLE-001", "cycle: CYCLE-002"), encoding="utf-8")
 
         decision_dir = project / ".ai" / "cycles" / "CYCLE-002" / "stages" / "01-idea" / "decision-requests"
         decision_dir.mkdir(parents=True)
@@ -385,6 +412,15 @@ def main() -> int:
         request_output = run_python_capture("aps.py", "decision", "request", str(decision_path), str(project))
         if "decision card" not in request_output or "pros/cons" not in request_output:
             raise SystemExit("decision request did not require a complete decision card")
+        invalid_decision_path = decision_dir / "DEC-INVALID.json"
+        invalid_decision = json.loads(decision_path.read_text(encoding="utf-8"))
+        invalid_decision["id"] = "DEC-INVALID"
+        invalid_decision["stage"] = True
+        invalid_decision["options"][0]["id"] = ""
+        invalid_decision_path.write_text(json.dumps(invalid_decision, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        invalid_decision_output = run_python_expect_failure_capture("aps.py", "decision", "request", str(invalid_decision_path), str(project))
+        if "stage" not in invalid_decision_output:
+            raise SystemExit("invalid decision request was accepted")
         run_python("aps.py", "decision", "list", str(project))
         status_output = run_python_capture("aps.py", "status", str(project))
         if "Pending decisions: DEC-001" not in status_output:
@@ -402,7 +438,9 @@ def main() -> int:
         decisions = (project / ".ai" / "decisions.md").read_text(encoding="utf-8")
         if "## DEC-001" not in decisions or "Decision: B" not in decisions or "Impact:" not in decisions or "Confirmation:" not in decisions:
             raise SystemExit("decision answer was not written to the decision log")
-        run_python_expect_failure("aps.py", "decision", "answer", "DEC-001", "A", str(project))
+        repeated_answer = run_python_capture("aps.py", "decision", "answer", "DEC-001", "A", str(project))
+        if "already recorded" not in repeated_answer:
+            raise SystemExit("repeated decision answer was not idempotent")
 
         multi_path = decision_dir / "DEC-002.json"
         multi_path.write_text(
@@ -497,6 +535,10 @@ def main() -> int:
         decisions = (project / ".ai" / "decisions.md").read_text(encoding="utf-8")
         if "## DEC-003" not in decisions or "Decision: CANCELLED" not in decisions:
             raise SystemExit("cancelled decision was not written to the decision log")
+        cancel_before_repeat = snapshot_files(project)
+        repeated_cancel = run_python_capture("aps.py", "decision", "cancel", "DEC-003", str(project))
+        if "already cancelled" not in repeated_cancel or snapshot_files(project) != cancel_before_repeat:
+            raise SystemExit("repeated decision cancel was not idempotent")
 
         research_dir = project / ".ai" / "cycles" / "CYCLE-002" / "stages" / "02-market-research"
         research_dir.mkdir(parents=True)
@@ -675,6 +717,22 @@ def main() -> int:
             if "项目边界不安全" not in linked_status:
                 raise SystemExit("project symlink was followed by status")
 
+        linked_research = research_dir / "LINKED.md"
+        try:
+            linked_research.symlink_to(research_path)
+        except (OSError, NotImplementedError):
+            print("WARN  当前环境不允许创建 Research Artifact symlink，跳过 research link smoke")
+        else:
+            linked_research_output = run_python_expect_failure_capture(
+                "aps.py",
+                "research",
+                "brief",
+                str(linked_research.relative_to(project)),
+                str(project),
+            )
+            if "符号链接" not in linked_research_output and "reparse" not in linked_research_output:
+                raise SystemExit("Research Artifact symlink was followed")
+
         pseudo_research = research_dir / "PSEUDO_KEYWORDS.md"
         pseudo_research.write_text(
             """# Pseudo\n\n## Research Brief\n\n正文提到 Question、Method、Key Findings、Conclusion、Uncertainty 和 Pending Decisions，引用中也出现这些词。\n""",
@@ -689,17 +747,60 @@ def main() -> int:
             raise SystemExit("cp1252 environment did not produce stable UTF-8 CLI output")
 
         run_python("scripts/build_release.py", "--refresh-manifest")
-        archive = next((ROOT / "dist").glob("APS_CLI_*.zip"))
+        release_version = next(line.split("=", 1)[1].strip() for line in (ROOT / "VERSION").read_text(encoding="utf-8").splitlines() if line.startswith("APS_CLI="))
+        archive = ROOT / "dist" / f"APS_CLI_{release_version}.zip"
+        with zipfile.ZipFile(archive) as release_zip:
+            names = {name.split("/", 1)[1] for name in release_zip.namelist() if "/" in name}
+        allowed = {
+            "aps.py",
+            "install_cli.py",
+            "install.sh",
+            "install.ps1",
+            "install.cmd",
+            "VERSION",
+            "README.md",
+            "QUICKSTART_中文.txt",
+            *{
+                path.relative_to(ROOT).as_posix()
+                for path in (ROOT / "src" / "aps_cli").rglob("*")
+                if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+            },
+        }
+        if names != allowed:
+            raise SystemExit(f"release archive contents are not allowlisted: {sorted(names ^ allowed)[:3]}")
         extracted = temp / "release"
         with zipfile.ZipFile(archive) as bundle:
             safe_extract_zip(archive, extracted)
         installer = next(extracted.rglob("install_cli.py"))
         prefix = temp / "prefix"
+        collision_prefix = temp / "collision-prefix"
+        collision_bin = collision_prefix / ("Scripts" if sys.platform == "win32" else "bin")
+        collision_bin.parent.mkdir(parents=True)
+        collision_bin.write_text("not a directory\n", encoding="utf-8")
+        collision_output = run_python_expect_failure_capture(str(installer), "--prefix", str(collision_prefix), cwd=extracted)
+        if "目录" not in collision_output or (collision_prefix / "share" / "aps-cli" / "current").exists():
+            raise SystemExit("CLI installer directory collision left a partial installation")
         run_python(str(installer), "--prefix", str(prefix), cwd=extracted)
         release_project = temp / "release-project"
         launcher = prefix / ("Scripts/aps.cmd" if sys.platform == "win32" else "bin/aps")
         run_launcher(launcher, ["init", str(release_project), "--host", "generic", "--no-launch", "--no-git"])
         run_launcher(launcher, ["doctor", str(release_project), "--host", "generic", "--standard-only"])
+
+        monorepo = temp / "monorepo"
+        monorepo.mkdir()
+        run(["git", "init"], cwd=monorepo)
+        monorepo_project = monorepo / "project"
+        run_python("aps.py", "init", str(monorepo_project), "--host", "generic", "--no-launch", "--no-git")
+        (monorepo_project / ".ai" / "state.yaml").write_text(
+            (monorepo_project / ".ai" / "templates" / "state.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        for runtime_file in ("decisions.md", "registry.yaml"):
+            (monorepo_project / ".ai" / runtime_file).write_text(
+                (monorepo_project / ".ai" / "templates" / runtime_file).read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+        run_python("aps.py", "doctor", str(monorepo_project), "--host", "generic")
     print("APS smoke test passed")
     return 0
 

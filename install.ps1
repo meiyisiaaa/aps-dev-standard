@@ -18,7 +18,7 @@ function Fail-Install {
 }
 
 if (-not $Repo) { $Repo = "meiyisiaaa/aps-dev-standard" }
-if ($Repo -notmatch '^[^/]+/[^/]+$') {
+if ($Repo -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
     Fail-Install "安装器未配置。请传入 -Repo owner/repo，或先运行 scripts/configure_repository.py。" 2
 }
 

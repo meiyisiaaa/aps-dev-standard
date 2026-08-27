@@ -4,17 +4,23 @@ set -eu
 REPO="${APS_REPO:-meiyisiaaa/aps-dev-standard}"
 VERSION="${APS_VERSION:-latest}"
 
-case "$REPO" in
-  */*) ;;
-  *) echo "FAIL  APS 安装器未配置。请设置 APS_REPO=owner/repo，或先运行 scripts/configure_repository.py。" >&2; exit 2 ;;
-esac
-
 PYTHON="${PYTHON:-}"
 if [ -z "$PYTHON" ]; then
   if command -v python3 >/dev/null 2>&1; then PYTHON=python3
   elif command -v python >/dev/null 2>&1; then PYTHON=python
   else echo "FAIL  需要 Python 3。" >&2; exit 2
   fi
+fi
+
+if ! "$PYTHON" - "$REPO" <<'PY'
+import re
+import sys
+if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", sys.argv[1]):
+    raise SystemExit(1)
+PY
+then
+  echo "FAIL  APS 安装器未配置。请设置 APS_REPO=owner/repo，或先运行 scripts/configure_repository.py。" >&2
+  exit 2
 fi
 
 if [ "$VERSION" != "latest" ]; then
@@ -82,7 +88,7 @@ if [ "$VERSION" = "latest" ]; then
   API="https://api.github.com/repos/$REPO/releases/latest"
   META="$TMP/release.json"
   if fetch "$API" "$META" 2>/dev/null; then
-    TAG="$($PYTHON - "$META" <<'PY'
+    TAG="$("$PYTHON" - "$META" <<'PY'
 import json,sys
 try:
     print(json.load(open(sys.argv[1], encoding='utf-8')).get('tag_name',''))
@@ -138,7 +144,7 @@ fi
 
 EXTRACT="$TMP/extract"
 mkdir -p "$EXTRACT"
-$PYTHON - "$ASSET" "$EXTRACT" <<'PY'
+"$PYTHON" - "$ASSET" "$EXTRACT" <<'PY'
 import stat
 import sys
 import zipfile
@@ -176,7 +182,7 @@ with zipfile.ZipFile(asset) as archive:
                     output.write(chunk)
 PY
 
-INSTALLER="$($PYTHON - "$EXTRACT" <<'PY'
+INSTALLER="$("$PYTHON" - "$EXTRACT" <<'PY'
 from pathlib import Path
 import sys
 root=Path(sys.argv[1])

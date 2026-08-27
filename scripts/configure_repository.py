@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import argparse
+import re
 from pathlib import Path
 
 TOKEN = "__APS_REPOSITORY__"
@@ -22,7 +23,7 @@ def main() -> int:
     ap.add_argument("repository", help="GitHub repository in owner/repo form")
     args = ap.parse_args()
     repo = args.repository.strip().strip("/")
-    if repo.count("/") != 1 or any(not part for part in repo.split("/")):
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
         ap.error("repository must be owner/repo")
     root = Path(__file__).resolve().parents[1]
     changed = 0

@@ -69,7 +69,7 @@ def remove_path(path: Path) -> None:
         shutil.rmtree(path)
 
 
-def promote_directory(staged: Path, target: Path) -> None:
+def promote_directory(staged: Path, target: Path, *, keep_backup: bool = False) -> Path | None:
     assert_no_reparse(staged)
     assert_no_reparse(target)
     assert_no_reparse(target.parent)
@@ -92,27 +92,20 @@ def promote_directory(staged: Path, target: Path) -> None:
             backup.replace(target)
         raise
     finally:
-        if completed and (backup.exists() or backup.is_symlink()):
+        if completed and not keep_backup and (backup.exists() or backup.is_symlink()):
             remove_path(backup)
+    return backup if completed and moved_target and keep_backup else None
 
 
-def write_launcher_atomic(path: Path, content: str, mode: int | None = None) -> None:
+def write_bytes_atomic(path: Path, data: bytes, mode: int | None = None) -> None:
     assert_no_reparse(path)
     if path.exists() and not path.is_file():
         raise RuntimeError(f"启动器目标不是普通文件：{path}")
     temporary: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            newline="",
-            dir=path.parent,
-            prefix=f".{path.name}.tmp-",
-            suffix="",
-            delete=False,
-        ) as handle:
+        with tempfile.NamedTemporaryFile(mode="wb", dir=path.parent, prefix=f".{path.name}.tmp-", suffix="", delete=False) as handle:
             temporary = Path(handle.name)
-            handle.write(content)
+            handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
         if mode is not None:
@@ -121,6 +114,34 @@ def write_launcher_atomic(path: Path, content: str, mode: int | None = None) -> 
     finally:
         if temporary and temporary.exists():
             temporary.unlink()
+
+
+def write_launcher_atomic(path: Path, content: str, mode: int | None = None) -> None:
+    write_bytes_atomic(path, content.encode("utf-8"), mode=mode)
+
+
+def snapshot_file(path: Path) -> tuple[bytes, int] | None:
+    assert_no_reparse(path)
+    if not path.exists():
+        return None
+    if not path.is_file():
+        raise RuntimeError(f"安装目标不是普通文件：{path}")
+    return path.read_bytes(), path.stat().st_mode
+
+
+def restore_file(path: Path, snapshot: tuple[bytes, int] | None) -> None:
+    if snapshot is None:
+        if path.exists() or path.is_symlink():
+            remove_path(path)
+        return
+    write_bytes_atomic(path, snapshot[0], mode=snapshot[1])
+
+
+def restore_directory(target: Path, backup: Path | None) -> None:
+    if target.exists() or target.is_symlink():
+        remove_path(target)
+    if backup is not None and (backup.exists() or backup.is_symlink()):
+        backup.replace(target)
 
 
 def _install() -> int:
@@ -133,48 +154,130 @@ def _install() -> int:
     prefix = args.prefix.expanduser()
     assert_no_reparse(prefix)
     prefix = prefix.resolve()
-    app_root = prefix / ("share" if os.name != "nt" else "share") / "aps-cli"
+    share_root = prefix / "share"
+    app_root = share_root / "aps-cli"
     version_root = app_root / version
     current_root = app_root / "current"
     bin_dir = prefix / ("Scripts" if os.name == "nt" else "bin")
+    launcher = bin_dir / ("aps.cmd" if os.name == "nt" else "aps")
 
-    assert_no_reparse(app_root)
-    assert_no_reparse(version_root)
-    assert_no_reparse(current_root)
-    assert_no_reparse(bin_dir)
-    app_root.mkdir(parents=True, exist_ok=True)
+    for path in (prefix, share_root, app_root, version_root, current_root, bin_dir, launcher):
+        assert_no_reparse(path)
+    for path, label in (
+        (prefix, "安装前缀"),
+        (share_root, "共享安装目录"),
+        (app_root, "APS 安装目录"),
+        (version_root, "版本安装目录"),
+        (current_root, "current 安装目录"),
+        (bin_dir, "启动器目录"),
+    ):
+        if path.exists() and not path.is_dir():
+            raise RuntimeError(f"{label}不是目录：{path}")
+    launcher_snapshot = snapshot_file(launcher)
+    source_tree = src_root / "src" / "aps_cli"
+    for source in (src_root / "aps.py", src_root / "VERSION", source_tree):
+        assert_no_reparse(source)
+    if not source_tree.is_dir():
+        raise RuntimeError(f"安装源缺少目录：{source_tree}")
+    for current, directories, filenames in os.walk(source_tree, followlinks=False):
+        for name in [*directories, *filenames]:
+            assert_no_reparse(Path(current) / name)
+    prefix_created = not prefix.exists()
+    share_root_created = not share_root.exists()
+    app_root_created = not app_root.exists()
+    bin_dir_created = not bin_dir.exists()
     staged_version = app_root / f".{version}.staging-{uuid.uuid4().hex}"
     staged_current = app_root / f".current.staging-{uuid.uuid4().hex}"
+    version_backup: Path | None = None
+    current_backup: Path | None = None
+    version_promoted = False
+    current_promoted = False
     try:
+        app_root.mkdir(parents=True, exist_ok=True)
+        bin_dir.mkdir(parents=True, exist_ok=True)
         staged_version.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src_root / "aps.py", staged_version / "aps.py")
-        shutil.copytree(src_root / "src" / "aps_cli", staged_version / "src" / "aps_cli")
+        shutil.copytree(
+            src_root / "src" / "aps_cli",
+            staged_version / "src" / "aps_cli",
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
         shutil.copy2(src_root / "VERSION", staged_version / "VERSION")
-        promote_directory(staged_version, version_root)
+        version_backup = promote_directory(staged_version, version_root, keep_backup=True)
+        version_promoted = True
 
         # Copy instead of symlink for Windows and restricted environments.
         shutil.copytree(version_root, staged_current)
-        promote_directory(staged_current, current_root)
+        current_backup = promote_directory(staged_current, current_root, keep_backup=True)
+        current_promoted = True
+
+        python = Path(sys.executable).resolve()
+        if os.name == "nt":
+            write_launcher_atomic(
+                launcher,
+                f'@echo off\r\n"{python}" "{current_root / "aps.py"}" %*\r\n',
+            )
+        else:
+            write_launcher_atomic(
+                launcher,
+                f'#!/bin/sh\nexec "{python}" "{current_root / "aps.py"}" "$@"\n',
+                mode=0o755,
+            )
+    except Exception as exc:
+        rollback_errors: list[str] = []
+        try:
+            restore_file(launcher, launcher_snapshot)
+        except Exception as rollback_exc:
+            rollback_errors.append(str(rollback_exc))
+        if current_promoted:
+            try:
+                restore_directory(current_root, current_backup)
+            except Exception as rollback_exc:
+                rollback_errors.append(str(rollback_exc))
+        if version_promoted:
+            try:
+                restore_directory(version_root, version_backup)
+            except Exception as rollback_exc:
+                rollback_errors.append(str(rollback_exc))
+        try:
+            for temporary in (staged_version, staged_current):
+                if temporary.exists() or temporary.is_symlink():
+                    remove_path(temporary)
+        except Exception as rollback_exc:
+            rollback_errors.append(str(rollback_exc))
+        if bin_dir_created and bin_dir.exists():
+            try:
+                bin_dir.rmdir()
+            except OSError:
+                pass
+        if app_root_created and app_root.exists():
+            try:
+                app_root.rmdir()
+            except OSError:
+                pass
+        if share_root_created and share_root.exists():
+            try:
+                share_root.rmdir()
+            except OSError:
+                pass
+        if prefix_created and prefix.exists():
+            try:
+                prefix.rmdir()
+            except OSError:
+                pass
+        if rollback_errors:
+            raise RuntimeError(f"安装失败且回滚失败：{rollback_errors[0]}") from exc
+        raise
     finally:
         for temporary in (staged_version, staged_current):
             if temporary.exists() or temporary.is_symlink():
                 remove_path(temporary)
-
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    python = Path(sys.executable).resolve()
-    if os.name == "nt":
-        launcher = bin_dir / "aps.cmd"
-        write_launcher_atomic(
-            launcher,
-            f'@echo off\r\n"{python}" "{current_root / "aps.py"}" %*\r\n',
-        )
-    else:
-        launcher = bin_dir / "aps"
-        write_launcher_atomic(
-            launcher,
-            f'#!/bin/sh\nexec "{python}" "{current_root / "aps.py"}" "$@"\n',
-            mode=0o755,
-        )
+    for backup in (version_backup, current_backup):
+        if backup is not None and (backup.exists() or backup.is_symlink()):
+            try:
+                remove_path(backup)
+            except OSError:
+                print(f"WARN  安装已完成，但无法清理旧版本备份：{backup}", file=sys.stderr)
 
     print(f"OK    APS CLI {version} 安装完成。")
     print(f"安装位置：{app_root}")

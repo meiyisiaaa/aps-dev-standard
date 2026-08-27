@@ -37,10 +37,16 @@ def _artifact_path(root: Path, artifact: Path) -> Path:
         from_cwd = Path.cwd() / candidate
         assert_no_reparse(from_cwd)
         from_cwd = from_cwd.resolve()
-        candidate = from_cwd if from_cwd.is_file() else (root / candidate).resolve()
+        if from_cwd.is_file():
+            candidate = from_cwd
+        else:
+            project_candidate = root / candidate
+            assert_no_reparse(project_candidate)
+            candidate = project_candidate.resolve()
     else:
         assert_no_reparse(candidate)
         candidate = candidate.resolve()
+    assert_no_reparse(candidate)
     cycles_path = root / ".ai" / "cycles"
     assert_no_reparse(cycles_path)
     cycles = cycles_path.resolve()

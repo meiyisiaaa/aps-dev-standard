@@ -22,7 +22,7 @@
     ".ai/templates/design-system-skill/references/README.md"
   ],
   "payload_sha256": {
-    "bootstrap/bootstrap-prompt.txt": "77a2dcb470596d4317d8a2a1b52f849ccdc4d9c7ad4f3ca0808b24623228e2ed",
+    "bootstrap/bootstrap-prompt.txt": "660c83afe6197fd6912e1bbd851388b1d114b2153f3dbb2e3c5e021d0e6e0680",
     "bootstrap/rebaseline-existing-project.txt": "146c4e399d773310088a8317f89062461463516253f3b8396e20237ec2a524b7",
     "gitignore.fragment": "48dcd6fba9419b86a90a332de00eada9ade22ab5bfb3d23314241c675057c5c6",
     "schemas/decision-request.schema.json": "191784897b32339f1734e70cefdd96adafe633674c217ddc58e164457ff3f933",
@@ -40,6 +40,6 @@
     "templates/registry.yaml": "e4b13e05265548e6b069818ef2778673257515f8062f1bc3634c82fe6724a766",
     "templates/runtime-host.yaml": "0c67ce3ad3987734a94ceeafcdb3729d051e05a582f89e3611c8920a58007c47",
     "templates/state.yaml": "b57278b0dd47202a37bcd449b1354fad39d3e3c353874d664e0c6d380845cf97",
-    "tools/standards-lint.py": "aaf526d8bd5690620489a271ede737b6137c277ed0c071844ed0d602ab972f0f"
+    "tools/standards-lint.py": "9dc0e4cb8f0cd5249d28ce220ab6caa911de9c28a6897a458c2b7a63cea92183"
   }
 }

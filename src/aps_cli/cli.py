@@ -10,7 +10,7 @@ from pathlib import Path
 
 from . import __version__, STANDARD_VERSION
 from .decision import DecisionError, answer_request, cancel_request, list_requests, load_runtime_state, register_request, show_request
-from .installer import BEGIN_AGENTS, BEGIN_GITIGNORE, END_AGENTS, END_GITIGNORE, SHA256_RE, assert_no_reparse, install_standard, is_safe_version
+from .installer import BEGIN_AGENTS, BEGIN_GITIGNORE, END_AGENTS, END_GITIGNORE, SHA256_RE, assert_no_reparse, install_standard, is_safe_version, sha256
 from .research import render_brief
 
 HOSTS = ("codex", "generic")
@@ -218,6 +218,24 @@ def missing_managed_files(root: Path, manifest: dict) -> list[str]:
         elif not (root / path).is_file():
             missing.append(relative)
     return missing
+
+
+def modified_managed_files(root: Path, manifest: dict) -> list[str]:
+    installed_files = manifest.get("installed_files")
+    if not isinstance(installed_files, dict):
+        return []
+    modified = []
+    for relative, expected in installed_files.items():
+        if not _safe_managed_path(relative) or not isinstance(expected, str):
+            continue
+        path = root / Path(relative)
+        try:
+            assert_no_reparse(path)
+            if path.is_file() and sha256(path).lower() != expected.lower():
+                modified.append(relative)
+        except (OSError, RuntimeError):
+            modified.append(relative)
+    return modified
 
 
 def read_runtime_state(root: Path) -> dict:
@@ -439,6 +457,11 @@ def run_doctor(root: Path, host: str, strict_runtime: bool = True) -> int:
             print(f"FAIL  存在未解决的托管文件冲突：{conflicts[0]}")
             recovery("本地修改的 Standard 文件尚未人工合并。", "先人工合并 `.ai/incoming/<version>/` 对应文件，再运行 `aps upgrade`。")
             return 2
+        modified = modified_managed_files(root, manifest)
+        if modified:
+            print(f"FAIL  Standard 托管文件已被本地修改：{modified[0]}")
+            recovery("当前文件内容与 manifest 记录的内置 Standard 不一致。", "运行 `aps upgrade` 将新版本放入 `.ai/incoming/<version>/`，人工合并后再运行 `aps upgrade`。")
+            return 2
     elif has_aps_artifacts(root):
         print("FAIL  APS 安装不完整。")
         recovery("检测到 APS 残留但缺少有效 manifest，doctor 不会把它当作普通项目。", "运行 `aps upgrade` 修复可识别的 Standard 文件。")
@@ -454,16 +477,25 @@ def run_doctor(root: Path, host: str, strict_runtime: bool = True) -> int:
             next_action = "运行 `aps init --no-launch` 初始化新项目，再重新运行 `aps doctor`。"
         recovery("项目中缺少 `.ai/tools/standards-lint.py`，无法开始体检。", next_action)
         return 2
-    if strict_runtime:
-        state_path = root / ".ai" / "state.yaml"
-        if not state_path.is_file():
-            print("FAIL  Runtime state 尚未初始化。")
-            recovery("Bootstrap 尚未写入 `.ai/state.yaml`，无法检查 active Stage。", "运行 `aps resume --no-launch`，完成 Bootstrap 后再运行 `aps doctor`。")
-            return 2
+    state_path = root / ".ai" / "state.yaml"
+    state_present = state_path.exists() or state_path.is_symlink()
+    if not state_present and strict_runtime:
+        print("FAIL  Runtime state 尚未初始化。")
+        recovery("Bootstrap 尚未写入 `.ai/state.yaml`，无法检查 active Stage。", "运行 `aps resume --no-launch`，完成 Bootstrap 后再运行 `aps doctor`。")
+        return 2
+    if state_present and not state_path.is_file():
+        print("FAIL  Runtime state 路径无效：`.ai/state.yaml` 必须是普通文件。")
+        recovery("状态路径是目录、链接或其他非普通文件，APS 不会猜测其内容。", "运行 `aps doctor --standard-only`，修复 `.ai/state.yaml` 后再运行 `aps resume --no-launch`。")
+        return 2
+    if state_present:
         _, state_error = runtime_state(root)
         if state_error:
             print(f"FAIL  Runtime state 无法严格解析：{state_error}")
-            recovery("状态损坏时 APS 不会猜测普通模式，也不会启动普通会话。", "运行 `aps doctor --standard-only`，修复第一项状态问题后再运行 `aps resume --no-launch`。")
+            if strict_runtime:
+                next_action = "运行 `aps doctor --standard-only`，按第一项状态问题人工修复 `.ai/state.yaml`，再运行 `aps resume --no-launch`。"
+            else:
+                next_action = "在 Host 中按第一项状态问题人工修复 `.ai/state.yaml`，再运行 `aps resume --no-launch`。"
+            recovery("状态损坏时 APS 不会猜测普通模式，也不会启动普通会话。", next_action)
             return 2
     cmd = [sys.executable, str(lint)]
     if strict_runtime:
@@ -562,6 +594,11 @@ def cmd_resume(args: argparse.Namespace) -> int:
                 print(f"  - {item}")
             recovery("本地修改的 Standard 文件仍未人工合并，resume 不会绕过冲突恢复。", "在 Host 中人工合并 `.ai/incoming/<version>/` 对应文件，再运行 `aps upgrade`。")
             return 2
+        modified = modified_managed_files(root, manifest)
+        if modified:
+            print(f"REFUSE  Standard 托管文件已被本地修改：{modified[0]}")
+            recovery("当前文件内容与 manifest 记录的内置 Standard 不一致。", "运行 `aps upgrade` 保留新版本到 `.ai/incoming/<version>/`，人工合并后再运行 `aps resume --no-launch`。")
+            return 2
         state_path = root / ".ai" / "state.yaml"
         _, state_error = runtime_state(root)
         if (state_path.exists() or state_path.is_symlink()) and state_error:
@@ -631,6 +668,19 @@ def cmd_rebaseline(args: argparse.Namespace) -> int:
         print(f"REFUSE  当前 Cycle {runtime['cycle']} 尚未完成，不能再创建 Cycle。")
         recovery("非首个 Cycle 必须先完成当前生命周期。", "运行 `aps resume --no-launch` 恢复当前 Cycle，不要再次执行 rebaseline。")
         return 2
+    if runtime["cycle"] != "CYCLE-001":
+        if runtime["stage"] != 23 or runtime["stage_status"] != "COMPLETE":
+            print(f"REFUSE  当前 Cycle {runtime['cycle']} 尚未完成 Stage 23 Cycle Review。")
+            recovery("只有完成 Cycle Review 后才能建立新的 Rebaseline Cycle。", "运行 `aps resume --no-launch` 完成 Stage 23，再重新运行 `aps rebaseline --confirm`。")
+            return 2
+        if runtime["stage_type"] == "GATED" and runtime["gate_status"] != "PASS":
+            print(f"REFUSE  当前 Cycle {runtime['cycle']} 的 Stage 23 Gate 尚未 PASS。")
+            recovery("GATED Stage 23 必须先通过 Gate，不能用 rebaseline 绕过。", "运行 `aps resume --no-launch` 修复 Stage 23，再重新运行 `aps rebaseline --confirm`。")
+            return 2
+        if runtime["blockers"] or runtime["pending_decision_refs"]:
+            print(f"REFUSE  当前 Cycle {runtime['cycle']} 仍有 blocker 或待决策。")
+            recovery("Cycle Review 关闭前必须清除所有 blocker 和待决策。", "运行 `aps resume --no-launch` 处理阻塞项，再重新运行 `aps rebaseline --confirm`。")
+            return 2
     if manifest.get("version") != STANDARD_VERSION:
         print(f"REFUSE  已安装 Standard 为 {manifest.get('version', 'unknown')}，需要先升级到 {STANDARD_VERSION}。")
         recovery("rebaseline 必须建立在当前 Standard 文件集合上。", "运行 `aps upgrade`，确认无冲突后再运行 `aps rebaseline --confirm`。")
@@ -644,6 +694,11 @@ def cmd_rebaseline(args: argparse.Namespace) -> int:
     if conflicts:
         print("REFUSE  存在未解决的托管文件冲突。")
         recovery("rebaseline 不会绕过本地 Standard 文件冲突。", "先人工合并 `.ai/incoming/<version>/` 对应文件，再运行 `aps upgrade`。")
+        return 2
+    modified = modified_managed_files(root, manifest)
+    if modified:
+        print(f"REFUSE  Standard 托管文件已被本地修改：{modified[0]}")
+        recovery("rebaseline 必须建立在 manifest 对应的内置 Standard 文件上。", "运行 `aps upgrade` 保留新版本到 `.ai/incoming/<version>/`，人工合并后再运行 `aps rebaseline --confirm`。")
         return 2
     return launch_host(root, args.host, handoff_prompt("rebaseline", root), args.no_launch, require_plan_mode=True)
 
@@ -766,6 +821,11 @@ def cmd_status(args: argparse.Namespace) -> int:
         for item in conflicts:
             print(f"  - {item}")
         recovery("APS 不会自动合并本地 Standard 修改。", "先人工合并 `.ai/incoming/<version>/` 对应文件，再运行 `aps upgrade`。")
+        return 2
+    modified = modified_managed_files(root, manifest)
+    if modified:
+        print(f"FAIL  Standard 托管文件已被本地修改：{modified[0]}")
+        recovery("当前文件内容与 manifest 记录的内置 Standard 不一致。", "运行 `aps upgrade` 将新版本放入 `.ai/incoming/<version>/`，人工合并后再运行 `aps upgrade`。")
         return 2
 
     state_exists = state.exists() or state.is_symlink()

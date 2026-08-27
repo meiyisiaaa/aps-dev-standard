@@ -213,14 +213,6 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
         report.error("legacy pseudo GateStatus 'PENDING USER DECISION' remains in executable standard/prompt")
 
 
-def find_repo_root(start: Path) -> Path:
-    cur = start.resolve()
-    for p in [cur, *cur.parents]:
-        if (p / ".git").exists():
-            return p
-    return cur
-
-
 def read_codex_config() -> tuple[int, list[str]]:
     limit = 32768
     fallbacks: list[str] = []
@@ -309,7 +301,7 @@ def scan_skills(root: Path, cwd: Path) -> dict[str, list[tuple[str, Path]]]:
 
 
 def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -> None:
-    root = find_repo_root(project_root)
+    root = project_root.expanduser().resolve()
     required_files = [
         root / "AGENTS.md",
         root / ".ai" / "state.yaml",

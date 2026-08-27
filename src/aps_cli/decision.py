@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from contextlib import contextmanager
@@ -45,6 +46,30 @@ STATE_ORDER = [
 STATE_STAGE_TYPES = {"GATED", "EXECUTION_LOOP", "OBSERVATION_LOOP", "ROUTER"}
 STATE_STAGE_STATUSES = {"ACTIVE", "BLOCKED", "COMPLETE"}
 STATE_GATE_STATUSES = {"PENDING", "PASS", "REVISE", "HOLD", "STOP"}
+DECISION_FIELDS = {
+    "$schema",
+    "schema_version",
+    "id",
+    "status",
+    "cycle",
+    "stage",
+    "input_type",
+    "question",
+    "why_now",
+    "options",
+    "recommended",
+    "allow_custom",
+    "allow_multiple",
+    "allow_rank",
+    "evidence_refs",
+    "affected_areas",
+    "selected_option_ids",
+    "answer",
+    "reason",
+    "resolved_at",
+    "cancelled_at",
+    "decision_card",
+}
 
 
 class DecisionError(RuntimeError):
@@ -191,7 +216,7 @@ def validate_runtime_state(data: dict[str, Any]) -> dict[str, Any]:
     missing = sorted(required - set(data))
     if missing:
         raise DecisionError(f"state.yaml 缺少必需字段：{', '.join(missing)}")
-    if data["schema_version"] != 1:
+    if isinstance(data["schema_version"], bool) or not isinstance(data["schema_version"], int) or data["schema_version"] != 1:
         raise DecisionError("state.yaml 的 schema_version 必须是 1")
     standard_version = data["standard_version"]
     if not isinstance(standard_version, str) or not STANDARD_VERSION_RE.fullmatch(standard_version):
@@ -226,6 +251,15 @@ def validate_runtime_state(data: dict[str, Any]) -> dict[str, Any]:
         values = data[key]
         if not isinstance(values, list) or any(not isinstance(item, str) or not pattern.fullmatch(item) for item in values):
             raise DecisionError(f"state.yaml 的 {key} 必须是有效引用字符串列表")
+    if stage_status == "BLOCKED" and not data["blockers"]:
+        raise DecisionError("存在 blocker 时 stage_status 才能是 BLOCKED")
+    if stage_status == "COMPLETE" and (data["blockers"] or data["pending_decision_refs"]):
+        raise DecisionError("COMPLETE Stage 不能携带 blocker 或待处理决策")
+    if stage_type == "GATED":
+        if gate_status == "PASS" and (stage_status != "COMPLETE" or data["blockers"] or data["pending_decision_refs"]):
+            raise DecisionError("Gate PASS 必须对应无 blocker、无待决策且已 COMPLETE 的 Stage")
+        if gate_status != "PASS" and stage_status == "COMPLETE":
+            raise DecisionError("未 PASS 的 Gate 不能对应 COMPLETE Stage")
     for key in ("current_goal", "updated_by"):
         if key in data and not isinstance(data[key], str):
             raise DecisionError(f"state.yaml 的 {key} 必须是字符串")
@@ -344,17 +378,24 @@ def _root(project: Path) -> Path:
     if not (root / ".ai").is_dir():
         raise DecisionError(f"APS 项目状态目录不存在：{root / '.ai'}")
     assert_no_reparse(root / ".ai")
+    cycles = root / ".ai" / "cycles"
+    if not cycles.is_dir():
+        raise DecisionError(f"APS Cycle 目录不存在：{cycles}")
+    assert_no_reparse(cycles)
     return root
 
 
 def _validate_request(data: Any, *, pending_only: bool = True) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise DecisionError("Decision Request 必须是 JSON 对象")
+    unknown = sorted(set(data) - DECISION_FIELDS)
+    if unknown:
+        raise DecisionError(f"Decision Request 包含未知字段：{', '.join(unknown)}")
     ref = data.get("id")
     if not isinstance(ref, str) or not DECISION_ID_RE.fullmatch(ref):
         raise DecisionError("Decision Request 的 id 必须匹配 DEC-*")
     schema_version = data.get("schema_version")
-    if schema_version not in {1, 2}:
+    if isinstance(schema_version, bool) or not isinstance(schema_version, int) or schema_version not in {1, 2}:
         raise DecisionError("Decision Request 的 schema_version 必须是 1 或 2")
     status = data.get("status")
     if status not in {"PENDING", "RESOLVED", "CANCELLED"}:
@@ -363,7 +404,7 @@ def _validate_request(data: Any, *, pending_only: bool = True) -> dict[str, Any]
         raise DecisionError("只有 status=PENDING 的 Decision Request 才能登记")
     if not isinstance(data.get("cycle"), str) or not CYCLE_RE.fullmatch(data["cycle"]):
         raise DecisionError("Decision Request 的 cycle 无效")
-    if not isinstance(data.get("stage"), int) or not 1 <= data["stage"] <= 23:
+    if isinstance(data.get("stage"), bool) or not isinstance(data.get("stage"), int) or not 1 <= data["stage"] <= 23:
         raise DecisionError("Decision Request 的 stage 必须在 1 到 23 之间")
     for key in ("question", "why_now"):
         if not isinstance(data.get(key), str) or not data[key].strip():
@@ -378,11 +419,18 @@ def _validate_request(data: Any, *, pending_only: bool = True) -> dict[str, Any]
     for option in options:
         if not isinstance(option, dict) or not isinstance(option.get("id"), str) or not isinstance(option.get("title"), str):
             raise DecisionError("每个决策选项都必须包含 id 和 title")
+        unknown_option = sorted(set(option) - {"id", "title", "summary", "tradeoffs"})
+        if unknown_option:
+            raise DecisionError(f"决策选项包含未知字段：{', '.join(unknown_option)}")
         option_id = option["id"]
+        if not option_id.strip() or not option["title"].strip():
+            raise DecisionError("决策选项的 id 和 title 不能为空")
         if option_id in option_ids:
             raise DecisionError(f"决策选项 id 重复：{option_id}")
         option_ids.append(option_id)
-        if schema_version == 2:
+        if "summary" in option and not isinstance(option["summary"], str):
+            raise DecisionError(f"决策选项 {option_id} 的 summary 必须是字符串")
+        if "tradeoffs" in option:
             tradeoffs = option.get("tradeoffs")
             valid_tradeoffs = (
                 isinstance(tradeoffs, str) and bool(tradeoffs.strip())
@@ -396,6 +444,8 @@ def _validate_request(data: Any, *, pending_only: bool = True) -> dict[str, Any]
     if input_type in {"single_select", "multi_select", "ranking", "approval"} and not option_ids:
         raise DecisionError(f"decision input_type {input_type} 必须包含 options")
     recommended = data.get("recommended")
+    if recommended is not None and not isinstance(recommended, str):
+        raise DecisionError("Decision Request 的 recommended 必须是字符串或 null")
     if recommended is not None and recommended not in option_ids:
         raise DecisionError("Decision Request 的 recommended option 不在 options 中")
     if schema_version == 2:
@@ -404,23 +454,43 @@ def _validate_request(data: Any, *, pending_only: bool = True) -> dict[str, Any]
         card = data.get("decision_card")
         if not isinstance(card, dict):
             raise DecisionError("schema_version=2 的 Decision Request 必须包含 decision_card")
+        unknown_card = sorted(set(card) - {"impact", "confirmation_method"})
+        if unknown_card:
+            raise DecisionError(f"decision_card 包含未知字段：{', '.join(unknown_card)}")
         impact = card.get("impact")
         if not isinstance(impact, dict) or any(
             not isinstance(impact.get(key), str) or not impact[key].strip()
             for key in ("code", "documentation", "time")
         ):
             raise DecisionError("decision_card.impact 必须包含 code、documentation 和 time")
+        if isinstance(impact, dict) and sorted(set(impact) - {"code", "documentation", "time"}):
+            raise DecisionError("decision_card.impact 包含未知字段")
         if not isinstance(card.get("confirmation_method"), str) or not card["confirmation_method"].strip():
             raise DecisionError("decision_card 必须包含 confirmation_method")
-    for key in ("evidence_refs", "affected_areas"):
+    for key in ("allow_custom", "allow_multiple", "allow_rank"):
+        if key in data and not isinstance(data[key], bool):
+            raise DecisionError(f"Decision Request 的 {key} 必须是布尔值")
+    for key in ("evidence_refs", "affected_areas", "selected_option_ids"):
         if key in data and (not isinstance(data[key], list) or not all(isinstance(item, str) for item in data[key])):
             raise DecisionError(f"Decision Request 的 {key} 必须是字符串数组")
+    for key in ("answer", "reason"):
+        if key in data and not isinstance(data[key], str):
+            raise DecisionError(f"Decision Request 的 {key} 必须是字符串")
+    for key in ("resolved_at", "cancelled_at"):
+        if key in data and data[key] is not None and not isinstance(data[key], str):
+            raise DecisionError(f"Decision Request 的 {key} 必须是字符串或 null")
     return data
 
 
 def _request_path(root: Path, path: Path) -> Path:
+    cycles_path = root / ".ai" / "cycles"
+    assert_no_reparse(cycles_path)
+    if not cycles_path.is_dir():
+        raise DecisionError(f"APS Cycle 目录不存在：{cycles_path}")
+    assert_no_reparse(path)
     resolved = path.expanduser().resolve()
-    cycles = (root / ".ai" / "cycles").resolve()
+    cycles = cycles_path.resolve()
+    assert_no_reparse(resolved)
     if cycles not in resolved.parents or resolved.suffix.lower() != ".json":
         raise DecisionError("Decision Request 必须是 `.ai/cycles/` 下的 JSON 文件")
     return resolved
@@ -437,7 +507,9 @@ def _read_request(path: Path, *, pending_only: bool = True) -> dict[str, Any]:
 def _find_request(root: Path, ref: str) -> Path:
     if not DECISION_ID_RE.fullmatch(ref):
         raise DecisionError("决策引用必须匹配 DEC-*")
-    cycles = (root / ".ai" / "cycles").resolve()
+    cycles_path = root / ".ai" / "cycles"
+    assert_no_reparse(cycles_path)
+    cycles = cycles_path.resolve()
     matches = sorted(cycles.glob(f"**/decision-requests/{ref}.json"))
     if not matches:
         raise DecisionError(f"找不到 Decision Request：{ref}")
@@ -452,6 +524,54 @@ def _blocker_ref(item: Any) -> str | None:
 
 def _save_state(path: Path, data: dict[str, Any]) -> None:
     atomic_write(path, _dump_state(data).encode("utf-8"))
+
+
+def _snapshot_file(path: Path) -> tuple[bytes, int] | None:
+    assert_no_reparse(path)
+    if not path.exists():
+        return None
+    if not path.is_file():
+        raise DecisionError(f"决策更新目标不是普通文件：{path}")
+    return path.read_bytes(), path.stat().st_mode
+
+
+def _restore_file(path: Path, snapshot: tuple[bytes, int] | None) -> None:
+    if snapshot is None:
+        if path.exists() or path.is_symlink():
+            assert_no_reparse(path)
+            path.unlink()
+        return
+    data, mode = snapshot
+    atomic_write(path, data)
+    try:
+        path.chmod(mode)
+    except OSError:
+        pass
+
+
+def _clear_decision_state(state: dict[str, Any], ref: str) -> bool:
+    pending = [item for item in state["pending_decision_refs"] if isinstance(item, str)]
+    blockers = [item for item in state["blockers"] if _blocker_ref(item) != ref]
+    changed = pending != state["pending_decision_refs"] or blockers != state["blockers"]
+    state["pending_decision_refs"] = [item for item in pending if item != ref]
+    state["blockers"] = blockers
+    if state["stage_type"] != "GATED" and not state["blockers"]:
+        state["stage_status"] = "ACTIVE"
+    return changed
+
+
+def _reconcile_terminal_decision(state_path: Path, state: dict[str, Any], ref: str) -> None:
+    snapshot = _snapshot_file(state_path)
+    try:
+        if _clear_decision_state(state, ref):
+            _bump_state(state, "aps-decision-recovery")
+            _save_state(state_path, state)
+    except Exception as exc:
+        try:
+            _restore_file(state_path, snapshot)
+        except Exception as rollback_exc:
+            raise DecisionError(f"决策状态修复失败且回滚失败：{rollback_exc}") from exc
+        raise
 
 
 def _bump_state(data: dict[str, Any], actor: str) -> None:
@@ -513,13 +633,16 @@ def _display_answer(request: dict[str, Any], answer: str) -> tuple[list[str], st
         return selected, ", ".join(selected)
     if input_type == "number":
         try:
-            float(answer)
-        except ValueError as exc:
+            number = float(answer)
+        except (ValueError, OverflowError) as exc:
             raise DecisionError("数字型决策回答必须是数字") from exc
+        if not math.isfinite(number):
+            raise DecisionError("数字型决策回答必须是有限数字")
     return [], answer
 
 
 def _decision_exists(log_path: Path, ref: str) -> bool:
+    assert_no_reparse(log_path)
     if not log_path.is_file():
         return False
     return bool(re.search(rf"(?m)^##\s+{re.escape(ref)}\s*$", log_path.read_text(encoding="utf-8")))
@@ -571,35 +694,49 @@ def answer_request(project: Path, ref: str, answer: str, reason: str = "") -> in
     request_path = _find_request(root, ref)
     log_path = root / ".ai" / "decisions.md"
     with _decision_lock(root):
-        request = _read_request(request_path)
-        selected, display = _display_answer(request, answer)
+        request = _read_request(request_path, pending_only=False)
         state_path, state = _load_state(root)
         pending = [item for item in state["pending_decision_refs"] if isinstance(item, str)]
+        if request["status"] == "CANCELLED":
+            raise DecisionError(f"Decision Request 已取消，不能回答：{ref}")
+        if request["status"] == "RESOLVED":
+            if not _decision_exists(log_path, ref):
+                raise DecisionError(f"Decision Request 已标记为 RESOLVED，但 decisions.md 缺少记录：{ref}")
+            _reconcile_terminal_decision(state_path, state, ref)
+            print(f"OK    decision already recorded（决策已记录）: {ref}")
+            print("NEXT  用户选择不等于 Gate PASS；运行 `aps status` 确认当前 Artifact、Validation 和 Gate。")
+            return 0
         if ref not in pending:
             if _decision_exists(log_path, ref):
-                print(f"OK    decision already recorded（决策已记录）；需要清理 state：{ref}")
+                raise DecisionError(f"Decision Request 仍为 PENDING，但 decisions.md 已存在记录：{ref}；请先人工检查状态一致性")
             else:
                 raise DecisionError(f"state.yaml 中没有待处理的 Decision Request：{ref}")
+        selected, display = _display_answer(request, answer)
 
         date = _now()
-        if not _decision_exists(log_path, ref):
+        snapshots = {path: _snapshot_file(path) for path in (log_path, request_path, state_path)}
+        try:
             old = log_path.read_text(encoding="utf-8") if log_path.is_file() else ""
             separator = "\n" if old.endswith("\n") else "\n\n"
             atomic_write(log_path, (old + separator + _decision_entry(request, selected, display, reason, date)).encode("utf-8"))
 
-        request["status"] = "RESOLVED"
-        request["selected_option_ids"] = selected
-        request["answer"] = answer
-        request["reason"] = reason
-        request["resolved_at"] = date
-        atomic_write(request_path, (json.dumps(request, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+            request["status"] = "RESOLVED"
+            request["selected_option_ids"] = selected
+            request["answer"] = answer
+            request["reason"] = reason
+            request["resolved_at"] = date
+            atomic_write(request_path, (json.dumps(request, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
 
-        state["pending_decision_refs"] = [item for item in pending if item != ref]
-        state["blockers"] = [item for item in state["blockers"] if _blocker_ref(item) != ref]
-        if state["stage_type"] != "GATED" and not state["blockers"]:
-            state["stage_status"] = "ACTIVE"
-        _bump_state(state, "aps-decision")
-        _save_state(state_path, state)
+            _clear_decision_state(state, ref)
+            _bump_state(state, "aps-decision")
+            _save_state(state_path, state)
+        except Exception as exc:
+            try:
+                for path, snapshot in snapshots.items():
+                    _restore_file(path, snapshot)
+            except Exception as rollback_exc:
+                raise DecisionError(f"决策更新失败且回滚失败：{rollback_exc}") from exc
+            raise
     print(f"OK    decision recorded（已记录回答）: {ref} = {display}")
     print("WARN  用户选择不等于 Gate PASS；决策只解除对应 blocker，不自动通过 Gate。")
     print("NEXT  完成对应 Artifact 和 Validation 后运行 `aps status`，按当前 Transition Contract 更新 Gate。")
@@ -611,31 +748,47 @@ def cancel_request(project: Path, ref: str, reason: str = "") -> int:
     request_path = _find_request(root, ref)
     log_path = root / ".ai" / "decisions.md"
     with _decision_lock(root):
-        request = _read_request(request_path)
+        request = _read_request(request_path, pending_only=False)
         state_path, state = _load_state(root)
         pending = [item for item in state["pending_decision_refs"] if isinstance(item, str)]
+        if request["status"] == "RESOLVED":
+            raise DecisionError(f"Decision Request 已回答，不能取消：{ref}")
+        if request["status"] == "CANCELLED":
+            if not _decision_exists(log_path, ref):
+                raise DecisionError(f"Decision Request 已标记为 CANCELLED，但 decisions.md 缺少记录：{ref}")
+            _reconcile_terminal_decision(state_path, state, ref)
+            print(f"OK    decision already cancelled（决策已取消）: {ref}")
+            print("NEXT  如果决策仍然需要，创建新的 Decision Request；否则运行 `aps status` 确认剩余 blocker。")
+            return 0
         if ref not in pending:
+            if _decision_exists(log_path, ref):
+                raise DecisionError(f"Decision Request 仍为 PENDING，但 decisions.md 已存在记录：{ref}；请先人工检查状态一致性")
             raise DecisionError(f"state.yaml 中没有待处理的 Decision Request：{ref}")
 
         date = _now()
         cancellation_reason = reason.strip() or "用户取消该决策请求"
-        if not _decision_exists(log_path, ref):
+        snapshots = {path: _snapshot_file(path) for path in (log_path, request_path, state_path)}
+        try:
             old = log_path.read_text(encoding="utf-8") if log_path.is_file() else ""
             separator = "\n" if old.endswith("\n") else "\n\n"
             entry = _decision_entry(request, [], "CANCELLED", cancellation_reason, date)
             atomic_write(log_path, (old + separator + entry).encode("utf-8"))
 
-        request["status"] = "CANCELLED"
-        request["reason"] = cancellation_reason
-        request["cancelled_at"] = date
-        atomic_write(request_path, (json.dumps(request, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+            request["status"] = "CANCELLED"
+            request["reason"] = cancellation_reason
+            request["cancelled_at"] = date
+            atomic_write(request_path, (json.dumps(request, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
 
-        state["pending_decision_refs"] = [item for item in pending if item != ref]
-        state["blockers"] = [item for item in state["blockers"] if _blocker_ref(item) != ref]
-        if state["stage_type"] != "GATED" and not state["blockers"]:
-            state["stage_status"] = "ACTIVE"
-        _bump_state(state, "aps-decision")
-        _save_state(state_path, state)
+            _clear_decision_state(state, ref)
+            _bump_state(state, "aps-decision")
+            _save_state(state_path, state)
+        except Exception as exc:
+            try:
+                for path, snapshot in snapshots.items():
+                    _restore_file(path, snapshot)
+            except Exception as rollback_exc:
+                raise DecisionError(f"决策取消失败且回滚失败：{rollback_exc}") from exc
+            raise
     print(f"OK    decision cancelled（已取消决策）: {ref}")
     print("NEXT  如果决策仍然需要，创建新的 Decision Request；否则运行 `aps status` 确认剩余 blocker。")
     return 0
