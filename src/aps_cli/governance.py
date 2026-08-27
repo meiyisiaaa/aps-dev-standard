@@ -357,7 +357,9 @@ def _safe_registry_path(value: object) -> bool:
     if any(ord(char) < 32 for char in value) or ":" in value:
         return False
     parts = value.split("/")
-    return not value.startswith("/") and all(part not in {"", ".", ".."} for part in parts)
+    if value.endswith("/"):
+        parts.pop()
+    return not value.startswith("/") and bool(parts) and all(part not in {"", ".", ".."} for part in parts)
 
 
 def validate_registry(data: dict[str, Any]) -> dict[str, Any]:

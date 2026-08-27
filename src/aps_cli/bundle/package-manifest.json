@@ -1,6 +1,6 @@
 {
   "name": "ai-project-standard",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "layout_version": 1,
   "managed_files": [
     ".ai/standards/lifecycle.md",
@@ -37,8 +37,8 @@
     "schemas/release-readiness.schema.json": "1bfad9f5c24f94affbbcafb04b41b92fca7a064a89a68cd72d550d3bddde0f7a",
     "schemas/state.schema.json": "dfdd99b9efd7aa72b8f6743d03eeeb76a70fa566072d380090d86b50eebed864",
     "schemas/transition-record.schema.json": "79ecc3d24330bf6ff875daf51f192a56d279cc2fd1058580cbc2b9fe9bb2fafb",
-    "standards/artifact-state.md": "6199ecb21537562c188410a6d3a14a80bd790a19b24343bd69d52e59c7a49cbe",
-    "standards/lifecycle.md": "3d01d97195649932abe64f01583a04847733d91d3d9c9d81f22c1c3aac7509d5",
+    "standards/artifact-state.md": "a2e7b786c6baf1cd8b16f27fca8f56d4d350cbdd77b09c1d3fd8de2cea3affe8",
+    "standards/lifecycle.md": "9899e8bbaa8d4fb2eb87554bcef3d89f4f7cb48e81a0f7806cdb68dfc95a0935",
     "templates/AGENTS.block.md": "96214cbc87cf6bb695969d1177ae7f61abedc337fd0c0d3405c9f3bc2a15fea6",
     "templates/decision-request.json": "079131f4d3153a48b8e4d5ade6eff410bdcc33a98d3a979bc156969305167af0",
     "templates/decisions.md": "9414c3309cf6eb96b63aff195a63ed81c59805236dde3270e6f29ae51c776916",
@@ -47,10 +47,10 @@
     "templates/design-system-skill/SKILL.md.template": "96db74ac003d543294f2cdb4e8fc5117b11c37d0acc0f5fa10085e32e27ff337",
     "templates/prd-snapshot.md": "85a1478aa4db9ae53b2602c8ea95f7b2bbe4aa4df79b59316f571eaef675d702",
     "templates/project-profile.json": "136c386f8d2757aad472d3cec7f38c25b3936cc3fa23929875e287a841da3563",
-    "templates/registry.yaml": "ae6a393d34bdfe142c609fe7948afa5c4dbc9850328b2aeef2aa49225acfb5fd",
+    "templates/registry.yaml": "e352510895a885cbd1e48e1041e79c619848ea01216bfd4c7380cc0fcfa7b9c1",
     "templates/release-readiness.json": "6710dcf6d9b39077f77477c3b8f34c4e4c43a303e34f1895dde7ce0f49b57cc5",
     "templates/runtime-host.yaml": "0c67ce3ad3987734a94ceeafcdb3729d051e05a582f89e3611c8920a58007c47",
-    "templates/state.yaml": "36bfa99395346fb8437664e90bbf43f7e7668cb269ad8c82ca0fcf491e74ed37",
+    "templates/state.yaml": "b6b4a073ac50574d1a1646f410ffd6b4a79e3df9bb23697b704a91cae34f03af",
     "templates/transition-record.json": "eef99e0de7d709fe9882914aac60d7a05b01e710d427f84c978c509316862696",
     "tools/standards-lint.py": "f4fa253608ac74a581ae4422246274fff5f9980f074622f762cd02e306ab8a0f"
   }

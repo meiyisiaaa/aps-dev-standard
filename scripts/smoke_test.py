@@ -333,7 +333,7 @@ def main() -> int:
 
         manifest = project / ".ai" / "standard-manifest.json"
         manifest_before = manifest.read_bytes()
-        manifest.write_text(manifest.read_text(encoding="utf-8").replace('"version": "1.3.2"', '"version": "0.0.0"'), encoding="utf-8")
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace('"version": "1.3.3"', '"version": "0.0.0"'), encoding="utf-8")
         mismatch_output = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
         if "REFUSE" not in mismatch_output or "aps upgrade" not in mismatch_output:
             raise SystemExit("version mismatch resume did not provide recovery guidance")
@@ -386,7 +386,7 @@ def main() -> int:
         registry.write_text(
             registry.read_text(encoding="utf-8").replace(
                 "    load_policy: referenced-only\n  project_profile:",
-                "    load_policy: referenced-only\n    related_paths:\n      - .ai/decisions.md\n  project_profile:",
+                "    load_policy: referenced-only\n    related_paths:\n      - .ai/decisions.md\n  project_assets:\n    domain: Project Assets\n    path: mobile/components/\n    status: ACTIVE\n    load_policy: ui-task\n  project_profile:",
             ),
             encoding="utf-8",
         )
@@ -556,7 +556,7 @@ def main() -> int:
         registry_before = registry.read_bytes()
         registry.write_text(
             """schema_version: 1
-standard_version: "1.3.2"
+standard_version: "1.3.3"
 revision: 1
 sources:
   broken_source:
@@ -586,7 +586,7 @@ critical_skills: {}
         registry.write_bytes(registry_before)
         registry.write_text(
             """schema_version: 1
-standard_version: "1.3.2"
+standard_version: "1.3.3"
 revision: 1
 revision: 2
 sources:
@@ -954,7 +954,7 @@ critical_skills: {}
         shutil.copytree(ROOT / "src" / "aps_cli" / "bundle", unsafe_bundle)
         unsafe_manifest_path = unsafe_bundle / "package-manifest.json"
         unsafe_manifest = json.loads(unsafe_manifest_path.read_text(encoding="utf-8"))
-        unsafe_manifest["version"] = "../1.3.2"
+        unsafe_manifest["version"] = "../1.3.3"
         unsafe_manifest_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
         try:
             installer_module.validate_bundle(unsafe_bundle)
