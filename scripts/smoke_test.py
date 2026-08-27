@@ -54,6 +54,41 @@ def run_python_capture(*args: str, cwd: Path = ROOT) -> str:
     return result.stdout
 
 
+def run_python_with_input(input_text: str, *args: str, cwd: Path = ROOT) -> str:
+    command = [sys.executable, *args]
+    print("+", " ".join(command))
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        input=input_text,
+        text=True,
+        encoding="utf-8",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    print(result.stdout, end="")
+    if result.returncode:
+        raise SystemExit(result.returncode)
+    return result.stdout
+
+
+def run_python_expect_failure_capture(*args: str, cwd: Path = ROOT) -> str:
+    command = [sys.executable, *args]
+    print("+", " ".join(command))
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        text=True,
+        encoding="utf-8",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    print(result.stdout, end="")
+    if result.returncode == 0:
+        raise SystemExit("command unexpectedly succeeded")
+    return result.stdout
+
+
 def run_python_expect_failure(*args: str, cwd: Path = ROOT) -> None:
     command = [sys.executable, *args]
     print("+", " ".join(command))
@@ -102,6 +137,9 @@ def main() -> int:
     configure_stdio()
     with tempfile.TemporaryDirectory(prefix="aps-smoke-") as raw_temp:
         temp = Path(raw_temp)
+        help_output = run_python_capture("aps.py", "--help")
+        if "典型路径" not in help_output or "aps decision request" not in help_output or "aps research brief" not in help_output:
+            raise SystemExit("CLI help does not include Chinese scenarios and decision/research paths")
         project = temp / "source-project"
         run_python("aps.py", "init", str(project), "--host", "generic", "--no-launch", "--no-git")
         run_python("aps.py", "doctor", str(project), "--host", "generic", "--standard-only")
@@ -131,6 +169,14 @@ def main() -> int:
         if snapshot_files(adopted) != adopted_after:
             raise SystemExit("repeated resume changed an adopted project")
 
+        manifest = project / ".ai" / "standard-manifest.json"
+        manifest_before = manifest.read_bytes()
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace('"version": "1.2.1"', '"version": "0.0.0"'), encoding="utf-8")
+        mismatch_output = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
+        if "REFUSE" not in mismatch_output or "aps upgrade" not in mismatch_output:
+            raise SystemExit("version mismatch resume did not provide recovery guidance")
+        manifest.write_bytes(manifest_before)
+
         nested = project / "nested"
         nested.mkdir()
         run_python_expect_failure("aps.py", "init", str(nested), "--host", "generic", "--no-launch", "--no-git")
@@ -144,6 +190,10 @@ def main() -> int:
         run_python_expect_failure("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
         state = project / ".ai" / "state.yaml"
         state.write_text((project / ".ai" / "templates" / "state.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+        before_menu_cancel = snapshot_files(project)
+        menu_output = run_python_with_input("3\nn\n", str(ROOT / "aps.py"), cwd=project)
+        if "已取消 rebaseline" not in menu_output or snapshot_files(project) != before_menu_cancel:
+            raise SystemExit("cancelled interactive rebaseline changed the project")
         run_python("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
         initial_status = run_python_capture("aps.py", "status", str(project))
         if "Next action:" not in initial_status or "Mode gate: PLAN (required on Stage entry)" not in initial_status:
@@ -225,7 +275,9 @@ def main() -> int:
         if "Pending decisions: DEC-001" not in status_output:
             raise SystemExit("status did not show the pending decision")
         run_python("aps.py", "decision", "show", "DEC-001", str(project))
-        run_python("aps.py", "decision", "answer", "DEC-001", "B", str(project), "--reason", "长期控制更适合当前目标")
+        answer_output = run_python_capture("aps.py", "decision", "answer", "DEC-001", "B", str(project), "--reason", "长期控制更适合当前目标")
+        if "Gate PASS" not in answer_output or "NEXT" not in answer_output:
+            raise SystemExit("decision answer did not explain Gate impact and next step")
         run_python("aps.py", "decision", "show", "DEC-001", str(project))
         if json.loads(decision_path.read_text(encoding="utf-8"))["status"] != "RESOLVED":
             raise SystemExit("decision request status was not resolved")
@@ -272,9 +324,18 @@ def main() -> int:
             encoding="utf-8",
         )
         run_python("aps.py", "decision", "request", str(multi_path), str(project))
+        handoff_before = snapshot_files(project)
         handoff_output = run_python_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
-        if "Current APS handoff:" not in handoff_output or "Pending decisions: DEC-002" not in handoff_output:
+        if (
+            "Current APS handoff:" not in handoff_output
+            or "Pending decisions: DEC-002" not in handoff_output
+            or "=== APS Agent Handoff ===" not in handoff_output
+            or "```text" not in handoff_output
+            or "不写入项目文件" not in handoff_output
+        ):
             raise SystemExit("resume handoff did not include the pending decision")
+        if snapshot_files(project) != handoff_before:
+            raise SystemExit("resume handoff changed the project workspace")
         run_python("aps.py", "decision", "answer", "DEC-002", "A,C", str(project))
         decisions = (project / ".ai" / "decisions.md").read_text(encoding="utf-8")
         if "## DEC-002" not in decisions or "Decision: A, C" not in decisions:
@@ -313,7 +374,9 @@ def main() -> int:
             encoding="utf-8",
         )
         run_python("aps.py", "decision", "request", str(cancel_path), str(project))
-        run_python("aps.py", "decision", "cancel", "DEC-003", str(project), "--reason", "实验已被范围调整取代")
+        cancel_output = run_python_capture("aps.py", "decision", "cancel", "DEC-003", str(project), "--reason", "实验已被范围调整取代")
+        if "NEXT" not in cancel_output:
+            raise SystemExit("decision cancel did not provide a next step")
         if json.loads(cancel_path.read_text(encoding="utf-8"))["status"] != "CANCELLED":
             raise SystemExit("decision cancel did not close the request")
         decisions = (project / ".ai" / "decisions.md").read_text(encoding="utf-8")
@@ -344,6 +407,11 @@ def main() -> int:
         brief_output = run_python_capture("aps.py", "research", "brief", str(research_path), str(project))
         if "Research Brief:" not in brief_output or "结论 / 建议" not in brief_output:
             raise SystemExit("research brief was not rendered")
+        missing_research = research_dir / "MISSING_BRIEF.md"
+        missing_research.write_text("# Missing\n\n## Research Brief\n\n研究问题：只填写了范围。\n", encoding="utf-8")
+        missing_output = run_python_expect_failure_capture("aps.py", "research", "brief", str(missing_research), str(project))
+        if "Research Brief is missing" not in missing_output or "研究摘要缺少字段" not in missing_output:
+            raise SystemExit("missing Research Brief fields did not provide repair guidance")
         run_python("aps.py", "doctor", str(project), "--host", "generic")
 
         before_upgrade = snapshot_files(project)
@@ -373,7 +441,7 @@ def main() -> int:
         if snapshot_files(project / ".ai" / "archive" / "install-backups") != backups:
             raise SystemExit("repeated force-managed upgrade created duplicate backups")
 
-        run_python("scripts/build_release.py")
+        run_python("scripts/build_release.py", "--refresh-manifest")
         archive = next((ROOT / "dist").glob("APS_CLI_*.zip"))
         extracted = temp / "release"
         with zipfile.ZipFile(archive) as bundle:

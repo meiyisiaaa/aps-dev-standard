@@ -29,6 +29,13 @@ EXPECTED_GATE = {"PENDING", "PASS", "REVISE", "HOLD", "STOP"}
 EXPECTED_STAGE_TYPES = {"GATED", "EXECUTION_LOOP", "OBSERVATION_LOOP", "ROUTER"}
 
 
+def configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 class Report:
     def __init__(self) -> None:
         self.errors: list[str] = []
@@ -411,6 +418,7 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
 
 
 def main() -> int:
+    configure_stdio()
     here = Path(__file__).resolve().parent
     ap = argparse.ArgumentParser()
     ai_root = here.parent

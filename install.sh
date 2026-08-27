@@ -6,16 +6,23 @@ VERSION="${APS_VERSION:-latest}"
 
 case "$REPO" in
   */*) ;;
-  *) echo "APS installer is not configured. Set APS_REPO=owner/repo or run scripts/configure_repository.py before publishing." >&2; exit 2 ;;
+  *) echo "FAIL  APS 安装器未配置。请设置 APS_REPO=owner/repo，或先运行 scripts/configure_repository.py。" >&2; exit 2 ;;
 esac
 
 PYTHON="${PYTHON:-}"
 if [ -z "$PYTHON" ]; then
   if command -v python3 >/dev/null 2>&1; then PYTHON=python3
   elif command -v python >/dev/null 2>&1; then PYTHON=python
-  else echo "Python 3 is required." >&2; exit 2
+  else echo "FAIL  需要 Python 3。" >&2; exit 2
   fi
 fi
+
+fail_install() {
+  echo "FAIL  APS 安装失败：$1" >&2
+  echo "原因：Release 校验、下载、解包或本地安装未完成。" >&2
+  echo "NEXT  检查网络、Python 和权限后重试；若使用源码包，必须显式设置 APS_ALLOW_MAIN_FALLBACK=1。" >&2
+  exit 1
+}
 
 TMP="$(mktemp -d 2>/dev/null || mktemp -d -t aps)"
 trap 'rm -rf "$TMP"' EXIT INT TERM
@@ -27,8 +34,7 @@ fetch() {
   elif command -v wget >/dev/null 2>&1; then
     wget -q "$url" -O "$out"
   else
-    echo "curl or wget is required." >&2
-    exit 2
+    fail_install "需要 curl 或 wget。"
   fi
 }
 
@@ -86,12 +92,10 @@ if [ -n "${TAG:-}" ]; then
   URL="https://github.com/$REPO/releases/download/$TAG/APS_CLI_${TAG#v}.zip"
   if fetch "$URL" "$ASSET" 2>/dev/null; then
     if ! fetch "${URL}.sha256" "$CHECKSUM" 2>/dev/null; then
-      echo "Release asset has no downloadable SHA-256 sidecar." >&2
-      exit 1
+      fail_install "Release 包没有可下载的 SHA-256 sidecar。"
     fi
     if ! verify_checksum "$ASSET" "$CHECKSUM"; then
-      echo "Release asset SHA-256 verification failed." >&2
-      exit 1
+      fail_install "Release 包 SHA-256 校验失败。"
     fi
     DOWNLOADED=1
   fi
@@ -99,10 +103,9 @@ fi
 
 if [ "$DOWNLOADED" -ne 1 ]; then
   if [ "${APS_ALLOW_MAIN_FALLBACK:-0}" != "1" ]; then
-    echo "No verified release asset is available. Set APS_ALLOW_MAIN_FALLBACK=1 to use the mutable main branch explicitly." >&2
-    exit 1
+    fail_install "没有可验证的 Release 包；如明确接受可变 main 源码包，请先设置 APS_ALLOW_MAIN_FALLBACK=1。"
   fi
-  echo "No verified release asset; explicitly using the mutable main branch source archive."
+  echo "WARN  没有可验证的 Release 包，已按显式授权使用可变 main 源码包。"
   fetch "https://github.com/$REPO/archive/refs/heads/main.zip" "$ASSET"
 fi
 

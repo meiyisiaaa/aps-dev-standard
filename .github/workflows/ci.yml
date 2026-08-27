@@ -19,5 +19,19 @@ jobs:
         run: python aps.py --help
       - name: Standards lint
         run: python src/aps_cli/bundle/package/tools/standards-lint.py
+      - name: POSIX installer syntax
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash -n install.sh
+      - name: PowerShell installer syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path install.ps1), [ref]$null, [ref]$errors) | Out-Null
+          if ($errors.Count) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
       - name: Install and release smoke test
         run: python scripts/smoke_test.py

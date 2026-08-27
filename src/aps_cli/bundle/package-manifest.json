@@ -1,6 +1,6 @@
 {
   "name": "ai-project-standard",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "layout_version": 1,
   "managed_files": [
     ".ai/standards/lifecycle.md",
@@ -21,23 +21,23 @@
     ".ai/templates/design-system-skill/references/README.md"
   ],
   "payload_sha256": {
-    "bootstrap/bootstrap-prompt.txt": "4fb67e9c700309cadc871abf5959bdbeb424b4d973d674e7b1f678c3f472f070",
+    "bootstrap/bootstrap-prompt.txt": "cbb8c3e07bb5df66a1fe3befa5fe92669ba059fa3b3c46c36b88505cfb30e170",
     "bootstrap/rebaseline-existing-project.txt": "146c4e399d773310088a8317f89062461463516253f3b8396e20237ec2a524b7",
     "gitignore.fragment": "48dcd6fba9419b86a90a332de00eada9ade22ab5bfb3d23314241c675057c5c6",
     "schemas/decision-request.schema.json": "191784897b32339f1734e70cefdd96adafe633674c217ddc58e164457ff3f933",
     "schemas/registry.schema.json": "46a4f5fbbafb9bf7d0f5be9476add4c9462edaf92d4acd7243dfb74d7a94607a",
     "schemas/state.schema.json": "32c316514b9e6cbf94ea0c76e89238ddb0b774abb22f5f77c4eef12dad07bdcd",
-    "standards/artifact-state.md": "21ee70b333550ae16349a1e141b7ebd6344a99bd44cac1b518ff836c12198b4b",
-    "standards/lifecycle.md": "0ceba5de6b0de40795e00c4185d07754d5adfb5a0c1fbcec17eeefb6977c213b",
+    "standards/artifact-state.md": "9f04e0b805e838a12c7d567f5d628f731549ad5ff55eab0a79d06010fae7230f",
+    "standards/lifecycle.md": "02f3a4d96dd956917240697d37fb711ae5ec9ba9cc5ec2142c6a2e82fa050bcb",
     "templates/AGENTS.block.md": "6a1a7186e4e055b8ddc874a41dddc3994303593df624277c643bb480108968f7",
     "templates/decision-request.json": "079131f4d3153a48b8e4d5ade6eff410bdcc33a98d3a979bc156969305167af0",
     "templates/decisions.md": "9414c3309cf6eb96b63aff195a63ed81c59805236dde3270e6f29ae51c776916",
     "templates/design-system-skill/evals/README.md": "f1f7e3efe25141a15a9d9e8bd214bf9f195bd85b16a062eaf149cdcd2958d736",
     "templates/design-system-skill/references/README.md": "afa731bf787d2833a289e599668d3a53c3f9dd2d40f254e8f99c4455c02768df",
     "templates/design-system-skill/SKILL.md.template": "96db74ac003d543294f2cdb4e8fc5117b11c37d0acc0f5fa10085e32e27ff337",
-    "templates/registry.yaml": "0ed1b4f41568236de406a0d23e9160795bfd30f587feda217c2cf5825eb8e1de",
+    "templates/registry.yaml": "49e48c25ef4e055cc00a064c3283d2b0975fe5021067832fd2c8a8448d55e3f0",
     "templates/runtime-host.yaml": "0c67ce3ad3987734a94ceeafcdb3729d051e05a582f89e3611c8920a58007c47",
-    "templates/state.yaml": "e74099cb5f20ee2772bb2de26db13082dd72b0ce6a9328ba1b92656c4146b415",
-    "tools/standards-lint.py": "1e69673a7e5e566a55b42d13f5f673609299366a04692e4b6dc3fe898360eccc"
+    "templates/state.yaml": "769fbf31c138886eedc501c2a7d3213cfe9c6635d1526af23ade61cead4fbd09",
+    "tools/standards-lint.py": "aaf526d8bd5690620489a271ede737b6137c277ed0c071844ed0d602ab972f0f"
   }
 }

@@ -3,6 +3,18 @@
 - Lifecycle Standard: `.ai/standards/lifecycle.md`
 - Artifact & State Standard: `.ai/standards/artifact-state.md`
 
+第一次使用：
+1. 新项目从 `aps init --no-launch` 开始；已有项目从 `aps resume --no-launch` 开始，不要用 `init` 覆盖旧项目。
+2. 将 CLI 打印的完整 `APS Agent Handoff` 代码块发送到当前 Agent Host；不要依赖剪贴板或项目内 handoff 文件。
+3. Bootstrap 完成后运行 `aps doctor`，再运行 `aps status` 确认当前 Cycle、Stage、Gate、blocker 和下一步。
+
+遇到阻塞后的恢复：
+- 先运行 `aps status`，按唯一的 `NEXT` 操作处理；不要猜测状态或跳过 Gate。
+- 运行状态缺失或无法解析时，先运行 `aps doctor --standard-only`；修复后再运行 `aps resume --no-launch`。
+- Standard 版本不匹配或托管文件冲突时，先审查 `aps upgrade` 的报告和 `.ai/incoming/`，不要自动合并；需要覆盖时才显式使用 `--force-managed`。
+- 待决策时使用 `aps decision show/list`，在当前对话完成决策卡分析，再运行 `aps decision answer` 或 `aps decision cancel`。
+- 仍不确定时保留 blocker，向用户请求决策；`resume` 只恢复，不创建新 Cycle。
+
 不要先完整读取两份 Standard。按最小上下文加载执行。
 
 Bootstrap 顺序：

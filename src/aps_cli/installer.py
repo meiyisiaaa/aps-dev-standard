@@ -279,11 +279,11 @@ def install_standard(bundle: Path, root: Path, host: str = "codex", force_manage
         manifest_changed = write_json_if_changed(old_manifest_path, install_manifest)
         if not quiet:
             if old_manifest.get("version") == version and changed == 0 and not incoming and not manifest_changed:
-                print(f"AI Project Standard {version} already current in {root}")
+                print(f"OK    AI Project Standard {version} 已是当前版本：{root}")
             else:
-                print(f"Installed AI Project Standard {version} in {root}")
+                print(f"OK    AI Project Standard {version} 已安装到：{root}")
             if incoming:
-                print(f"WARN: {len(incoming)} locally modified managed file(s) preserved; review .ai/incoming/{version}/")
+                print(f"WARN  已保留 {len(incoming)} 个本地修改的托管文件；请检查 `.ai/incoming/{version}/`。")
         return {
             "changed": changed,
             "incoming": incoming,

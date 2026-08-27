@@ -19,8 +19,8 @@ git push
 Then tag a release:
 
 ```bash
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.2.1
+git push origin v1.2.1
 ```
 
 When changing files under `src/aps_cli/bundle/package/`, refresh their manifest checksums before committing:
@@ -29,7 +29,7 @@ When changing files under `src/aps_cli/bundle/package/`, refresh their manifest 
 python scripts/build_release.py --refresh-manifest
 ```
 
-GitHub Actions builds `APS_CLI_1.2.0.zip` and its SHA-256 file and attaches them to the Release.
+GitHub Actions builds `APS_CLI_1.2.1.zip` and its SHA-256 file and attaches them to the Release.
 The online installers verify that SHA-256 file and fail closed when no verified Release asset is available.
 
 ## One-line install
@@ -52,6 +52,31 @@ After installation:
 cd your-project
 aps
 ```
+
+## First use and recovery
+
+新项目：
+
+```bash
+aps init --no-launch
+```
+
+把 CLI 输出的完整 `APS Agent Handoff` 代码块发送到当前 Agent Host；Bootstrap 完成后运行：
+
+```bash
+aps doctor
+aps status
+```
+
+已有项目：
+
+```bash
+aps resume --no-launch
+```
+
+`resume` 会按实际项目状态输出 handoff；在有效 manifest 存在后，重复 `resume` 只恢复状态，不升级或修改项目。
+
+遇到阻塞时先运行 `aps status`，只执行输出的唯一 `NEXT`。运行状态缺失或损坏时，先运行 `aps doctor --standard-only`，修复后再运行 `aps resume --no-launch`。Standard 版本不匹配或出现托管文件冲突时，先运行 `aps upgrade` 并审查 `.ai/incoming/`；APS 不会自动合并本地修改。
 
 Or directly:
 
@@ -89,6 +114,8 @@ aps decision answer DEC-001 A
 
 Use `aps decision list` and `aps decision show DEC-001` to inspect pending requests. A selected option does not pass a Gate automatically; complete the required Artifact and Validation first.
 
+决策路径：登记后先在当前对话展示完整 Decision Card，再回答或取消；`aps decision answer` 和 `aps decision cancel` 都会打印下一步。用户选择只解除对应 blocker，不代表 Gate PASS。
+
 If the request is no longer needed, close it explicitly:
 
 ```bash
@@ -98,6 +125,8 @@ aps decision cancel DEC-001 --reason "scope changed"
 After switching conversations, run `aps status` or `aps resume --no-launch` to print the current Cycle, blockers, pending decisions, and next action. For Market / Product Research, answer the original question directly in the current conversation, analyze the evidence, then keep the full report in the Stage Artifact and expose the user-facing summary with `aps research brief <ARTIFACT>`.
 
 Before ending, pausing, blocking, or handing off any Stage, output a one-page Stage User Brief in the current conversation with: goal, inputs, completed work, incomplete work, user decisions, confirmation impact, and verification results. The Stage Artifact must also contain or reference an Artifact Contract with its purpose, inputs, outputs, acceptance criteria, current status, blocking decisions, and next stage. A written document alone does not mean the Stage is complete.
+
+研究路径：先在当前对话直接回答原始问题并分析关键证据，再把完整报告写入 Stage Artifact；使用 `aps research brief <ARTIFACT>` 展示摘要。Artifact 必须包含稳定的 `## Research Brief` 标识和六类必需字段，缺失时按 CLI 提示补齐。
 
 High-impact Stage entry requires Codex Plan mode before workspace changes: Stage 01, 05, 06, 07, 08, 09, 10, 13, 14, 15, 16, and 20. Stage 22 requires it when an Active Change exists. After the plan is accepted, switch to normal mode for execution. If `aps` is asked to launch Codex for one of these entries, it deliberately does not start a normal session; open the project in Codex, select Plan mode, and send the printed handoff.
 

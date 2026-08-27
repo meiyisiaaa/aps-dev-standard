@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=./schemas/registry.schema.json
 schema_version: 1
-standard_version: "1.2.0"
+standard_version: "1.2.1"
 revision: 1
 
 sources:

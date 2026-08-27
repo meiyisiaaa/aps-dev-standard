@@ -4,9 +4,21 @@ param(
     [string]$Prefix = ""
 )
 $ErrorActionPreference = "Stop"
+
+function Fail-Install {
+    param(
+        [Parameter(Mandatory=$true)][string]$Message,
+        [int]$ExitCode = 1
+    )
+    [Console]::Error.WriteLine("FAIL  APS 安装失败：$Message")
+    [Console]::Error.WriteLine("原因：Release 校验、下载、解包或本地安装未完成。")
+    [Console]::Error.WriteLine("NEXT  检查网络、Python 和权限后重试；若使用源码包，必须显式设置 APS_ALLOW_MAIN_FALLBACK=1。")
+    exit $ExitCode
+}
+
 if (-not $Repo) { $Repo = "meiyisiaaa/aps-dev-standard" }
 if ($Repo -notmatch '^[^/]+/[^/]+$') {
-    throw "APS installer is not configured. Pass -Repo owner/repo or run scripts/configure_repository.py before publishing."
+    Fail-Install "安装器未配置。请传入 -Repo owner/repo，或先运行 scripts/configure_repository.py。" 2
 }
 
 $python = Get-Command py -ErrorAction SilentlyContinue
@@ -16,7 +28,7 @@ if ($python) {
     $pythonArgs = @("-3")
 } else {
     $python = Get-Command python -ErrorAction SilentlyContinue
-    if (-not $python) { throw "Python 3 is required." }
+    if (-not $python) { Fail-Install "需要 Python 3。" 2 }
     $pythonExe = $python.Source
 }
 
@@ -27,10 +39,10 @@ function Test-ReleaseChecksum {
     )
     $line = Get-Content -LiteralPath $ChecksumPath | Where-Object { $_.Trim() } | Select-Object -First 1
     $match = [regex]::Match($line, '^\s*([0-9a-fA-F]{64})\s+\S+\s*$')
-    if (-not $match.Success) { throw "Invalid SHA-256 sidecar." }
+    if (-not $match.Success) { throw "SHA-256 sidecar 格式无效。" }
     $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $AssetPath).Hash
     if (-not $actual.Equals($match.Groups[1].Value, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Release SHA-256 mismatch."
+        throw "Release SHA-256 校验不匹配。"
     }
 }
 
@@ -61,25 +73,27 @@ try {
                 Test-ReleaseChecksum -AssetPath $asset -ChecksumPath $checksum
                 $downloaded = $true
             } catch {
-                throw "Release asset verification failed: $($_.Exception.Message)"
+                throw "Release 包校验失败：$($_.Exception.Message)"
             }
         }
     }
     if (-not $downloaded) {
         if ($env:APS_ALLOW_MAIN_FALLBACK -ne "1") {
-            throw "No verified release asset is available. Set APS_ALLOW_MAIN_FALLBACK=1 to use the mutable main branch explicitly."
+            throw "没有可验证的 Release 包。若明确接受可变 main 源码包，请先设置 APS_ALLOW_MAIN_FALLBACK=1。"
         }
-        Write-Host "No verified release asset; explicitly using the mutable main branch source archive."
+        Write-Host "WARN  没有可验证的 Release 包，已按显式授权使用可变 main 源码包。"
         Invoke-WebRequest -Headers @{"User-Agent"="aps-installer"} -Uri "https://github.com/$Repo/archive/refs/heads/main.zip" -OutFile $asset
     }
     $extract = Join-Path $tmp "extract"
     Expand-Archive -LiteralPath $asset -DestinationPath $extract -Force
     $installer = Get-ChildItem -Path $extract -Filter install_cli.py -Recurse | Sort-Object { $_.FullName.Split([IO.Path]::DirectorySeparatorChar).Count } | Select-Object -First 1
-    if (-not $installer) { throw "install_cli.py not found in downloaded archive." }
+    if (-not $installer) { throw "下载包中找不到 install_cli.py。" }
     $argsList = @($pythonArgs) + @($installer.FullName)
     if ($Prefix) { $argsList += @("--prefix", $Prefix) }
     & $pythonExe @argsList
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+} catch {
+    Fail-Install $_.Exception.Message
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
