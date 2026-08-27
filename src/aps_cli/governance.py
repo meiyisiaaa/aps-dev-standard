@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ from .installer import assert_no_reparse
 
 
 PROFILE_RELATIVE = Path(".ai/project-profile.json")
+REGISTRY_RELATIVE = Path(".ai/registry.yaml")
 TRANSITIONS_RELATIVE = Path(".ai/audit/transitions.jsonl")
 RELEASE_READINESS_RELATIVE = Path(".ai/release-readiness.json")
 
@@ -24,6 +26,23 @@ STAGE_STATUSES = {"ACTIVE", "BLOCKED", "COMPLETE"}
 GATE_STATUSES = {"PENDING", "PASS", "REVISE", "HOLD", "STOP"}
 RELEASE_STATUSES = {"DRAFT", "READY", "RELEASED", "BLOCKED"}
 CHECK_STATUSES = {"PASS", "FAIL", "PENDING", "SKIPPED"}
+REGISTRY_STATUSES = {"DRAFT", "ACTIVE", "SUPERSEDED", "ARCHIVED", "DEPRECATED", "RETIRED"}
+REGISTRY_LOAD_POLICIES = {
+    "always-minimal",
+    "stage",
+    "task",
+    "stage/task",
+    "stage/on-demand",
+    "ui-task",
+    "trigger-only",
+    "on-demand",
+    "bootstrap/on-demand",
+    "referenced-only",
+    "bootstrap/runtime",
+    "host-managed",
+    "archive-never-default",
+    "release-only",
+}
 
 PROFILE_RELEASE_CHECKS: dict[str, tuple[str, ...]] = {
     "NORMAL": ("lint", "build", "functional_qa", "rollback"),
@@ -76,8 +95,29 @@ class GovernanceError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class GovernanceProblem:
+    """A typed, non-persistent governance problem for CLI recovery routing."""
+
+    code: str
+    message: str
+    path: str | None = None
+
+
+def governance_problem(code: str, message: str, path: str | None = None) -> GovernanceProblem:
+    return GovernanceProblem(code=code, message=message, path=path)
+
+
+def _wrap_problems(code: str, messages: list[str], path: str | None = None) -> list[GovernanceProblem]:
+    return [governance_problem(code, message, path) for message in messages]
+
+
 def profile_path(root: Path) -> Path:
     return root / PROFILE_RELATIVE
+
+
+def registry_path(root: Path) -> Path:
+    return root / REGISTRY_RELATIVE
 
 
 def transitions_path(root: Path) -> Path:
@@ -213,6 +253,156 @@ def load_project_profile(root: Path) -> tuple[dict[str, Any] | None, str | None]
         return validate_project_profile(_read_json(path, "project-profile.json")), None
     except (GovernanceError, RuntimeError) as exc:
         return None, str(exc)
+
+
+def _registry_scalar(value: str) -> object:
+    value = value.strip()
+    if not value:
+        return {}
+    if value in {"{}", "[]"}:
+        return {} if value == "{}" else []
+    if value in {"null", "Null", "NULL", "~"}:
+        return None
+    if value in {"true", "True", "TRUE"}:
+        return True
+    if value in {"false", "False", "FALSE"}:
+        return False
+    if re.fullmatch(r"-?[0-9]+", value):
+        return int(value)
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _registry_line_value(value: str) -> str:
+    quoted = False
+    quote = ""
+    for index, char in enumerate(value):
+        if char in {"'", '"'}:
+            if not quoted:
+                quoted = True
+                quote = char
+            elif quote == char:
+                quoted = False
+        elif char == "#" and not quoted and (index == 0 or value[index - 1].isspace()):
+            return value[:index].rstrip()
+    return value.strip()
+
+
+def _parse_registry_subset(text: str) -> dict[str, Any]:
+    """Parse the deliberately small mapping-only Registry YAML subset without PyYAML."""
+    root: dict[str, Any] = {}
+    stack: list[tuple[int, dict[str, Any]]] = [(-1, root)]
+    for line_number, raw_line in enumerate(text.splitlines(), 1):
+        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
+            continue
+        if "\t" in raw_line[: len(raw_line) - len(raw_line.lstrip())]:
+            raise GovernanceError(f"registry.yaml 第 {line_number} 行不能使用 Tab 缩进")
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        content = _registry_line_value(raw_line[indent:])
+        if not content:
+            continue
+        if content.startswith("-") or ":" not in content:
+            raise GovernanceError(f"registry.yaml 第 {line_number} 行不是受支持的映射字段")
+        key, raw_value = (part.strip() for part in content.split(":", 1))
+        if not key or not ID_RE.fullmatch(key):
+            raise GovernanceError(f"registry.yaml 第 {line_number} 行字段名无效：{key}")
+        while len(stack) > 1 and indent <= stack[-1][0]:
+            stack.pop()
+        parent = stack[-1][1]
+        if key in parent:
+            raise GovernanceError(f"registry.yaml 第 {line_number} 行字段重复：{key}")
+        value = _registry_scalar(raw_value)
+        parent[key] = value
+        if value == {} and not raw_value.strip():
+            stack.append((indent, value))
+    return root
+
+
+def _read_registry(path: Path) -> dict[str, Any]:
+    assert_no_reparse(path)
+    if not path.is_file():
+        raise GovernanceError(f"Registry 缺失或不是普通文件：{REGISTRY_RELATIVE.as_posix()}")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise GovernanceError(f"Registry 无法读取：{exc}") from exc
+    try:
+        import yaml
+    except ImportError:
+        return _parse_registry_subset(text)
+    try:
+        value = yaml.safe_load(text)
+    except Exception as exc:
+        raise GovernanceError(f"Registry YAML 无法解析：{exc}") from exc
+    if not isinstance(value, dict):
+        raise GovernanceError("registry.yaml 顶层必须是对象")
+    return value
+
+
+def _safe_registry_path(value: object) -> bool:
+    if not isinstance(value, str) or not value.strip() or "\\" in value:
+        return False
+    value = value.strip()
+    if any(ord(char) < 32 for char in value) or ":" in value:
+        return False
+    parts = value.split("/")
+    return not value.startswith("/") and all(part not in {"", ".", ".."} for part in parts)
+
+
+def validate_registry(data: dict[str, Any]) -> dict[str, Any]:
+    allowed = {"schema_version", "standard_version", "revision", "sources", "artifacts", "dependencies", "critical_skills"}
+    unknown = sorted(set(data) - allowed)
+    if unknown:
+        raise GovernanceError(f"registry.yaml 包含未知字段：{', '.join(unknown)}")
+    required = allowed
+    missing = sorted(required - set(data))
+    if missing:
+        raise GovernanceError(f"registry.yaml 缺少字段：{', '.join(missing)}")
+    if isinstance(data["schema_version"], bool) or data["schema_version"] != 1:
+        raise GovernanceError("registry.yaml.schema_version 必须是 1")
+    if not isinstance(data["standard_version"], str) or not re.fullmatch(r"1\.(1|2|3)\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?", data["standard_version"]):
+        raise GovernanceError(f"registry.yaml.standard_version 无效：{data['standard_version']}")
+    if isinstance(data["revision"], bool) or not isinstance(data["revision"], int) or data["revision"] < 1:
+        raise GovernanceError("registry.yaml.revision 必须是正整数")
+    sources = data["sources"]
+    if not isinstance(sources, dict) or not sources:
+        raise GovernanceError("registry.yaml.sources 必须是非空对象")
+    required_source = {"domain", "path", "status", "load_policy"}
+    for source_id, source in sources.items():
+        if not isinstance(source_id, str) or not ID_RE.fullmatch(source_id):
+            raise GovernanceError(f"registry.yaml.sources 的 source id 无效：{source_id}")
+        if not isinstance(source, dict):
+            raise GovernanceError(f"registry.yaml.sources.{source_id} 必须是对象")
+        missing_source = sorted(required_source - set(source))
+        if missing_source:
+            raise GovernanceError(f"registry.yaml.sources.{source_id} 缺少字段：{', '.join(missing_source)}")
+        if not _nonempty(source["domain"]):
+            raise GovernanceError(f"registry.yaml.sources.{source_id}.domain 不能为空")
+        if not _safe_registry_path(source["path"]):
+            raise GovernanceError(f"registry.yaml.sources.{source_id}.path 不是安全的项目相对路径：{source['path']}")
+        if source["status"] not in REGISTRY_STATUSES:
+            raise GovernanceError(f"registry.yaml.sources.{source_id}.status 无效：{source['status']}")
+        if source["load_policy"] not in REGISTRY_LOAD_POLICIES:
+            raise GovernanceError(f"registry.yaml.sources.{source_id}.load_policy 无效：{source['load_policy']}")
+        for optional in ("version", "last_verified"):
+            if optional in source and source[optional] is not None and not _nonempty(source[optional]):
+                raise GovernanceError(f"registry.yaml.sources.{source_id}.{optional} 不能为空")
+    for field in ("artifacts", "dependencies", "critical_skills"):
+        if not isinstance(data[field], dict):
+            raise GovernanceError(f"registry.yaml.{field} 必须是对象")
+    return data
+
+
+def registry_problems(root: Path) -> list[str]:
+    path = registry_path(root)
+    if not path.exists() and not path.is_symlink():
+        return [f"缺少 Registry：{REGISTRY_RELATIVE.as_posix()}（请按 `.ai/templates/registry.yaml` 修复）"]
+    try:
+        validate_registry(_read_registry(path))
+        return []
+    except (GovernanceError, OSError, UnicodeError, RuntimeError) as exc:
+        return [str(exc)]
 
 
 def _state_view(value: object, label: str) -> dict[str, Any]:
@@ -463,26 +653,55 @@ def prd_snapshot_problems(root: Path, state: dict[str, Any]) -> list[str]:
     return problems
 
 
-def runtime_governance_problems(root: Path, state: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
+def runtime_governance_problems(root: Path, state: dict[str, Any]) -> tuple[dict[str, Any] | None, list[GovernanceProblem]]:
     profile, error = load_project_profile(root)
     if error:
-        return None, [error]
+        return None, [governance_problem("project_profile", error, PROFILE_RELATIVE.as_posix())]
     assert profile is not None
-    problems = validate_transition_log(root, state, profile)
-    problems.extend(release_readiness_problems(root, state, profile))
-    problems.extend(prd_snapshot_problems(root, state))
+    problems = _wrap_problems("registry", registry_problems(root), REGISTRY_RELATIVE.as_posix())
+    problems.extend(
+        _wrap_problems(
+            "transition_audit",
+            validate_transition_log(root, state, profile),
+            TRANSITIONS_RELATIVE.as_posix(),
+        )
+    )
+    problems.extend(
+        _wrap_problems(
+            "release_readiness",
+            release_readiness_problems(root, state, profile),
+            RELEASE_READINESS_RELATIVE.as_posix(),
+        )
+    )
+    problems.extend(_wrap_problems("prd_snapshot", prd_snapshot_problems(root, state)))
     return profile, problems
 
 
-def profile_status(root: Path, state: dict[str, Any] | None) -> tuple[str, list[str]]:
+def profile_status(root: Path, state: dict[str, Any] | None) -> tuple[str, list[GovernanceProblem]]:
     profile, error = load_project_profile(root)
     if error:
         path = profile_path(root)
         if state is None and not path.exists() and not path.is_symlink():
             return "not initialized", []
-        return "invalid", [error]
+        return "invalid", [governance_problem("project_profile", error, PROFILE_RELATIVE.as_posix())]
     assert profile is not None
-    problems = validate_transition_log(root, state, profile) if state is not None else []
-    problems.extend(release_readiness_problems(root, state, profile) if state is not None else [])
-    problems.extend(prd_snapshot_problems(root, state) if state is not None else [])
+    problems = (
+        _wrap_problems("registry", registry_problems(root), REGISTRY_RELATIVE.as_posix())
+        + _wrap_problems(
+            "transition_audit",
+            validate_transition_log(root, state, profile),
+            TRANSITIONS_RELATIVE.as_posix(),
+        )
+        if state is not None
+        else []
+    )
+    if state is not None:
+        problems.extend(
+            _wrap_problems(
+                "release_readiness",
+                release_readiness_problems(root, state, profile),
+                RELEASE_READINESS_RELATIVE.as_posix(),
+            )
+        )
+        problems.extend(_wrap_problems("prd_snapshot", prd_snapshot_problems(root, state)))
     return profile["risk_profile"], problems

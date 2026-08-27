@@ -110,6 +110,7 @@ def run_python_expect_failure_capture(*args: str, cwd: Path = ROOT) -> str:
     print(result.stdout, end="")
     if result.returncode == 0:
         raise SystemExit("command unexpectedly succeeded")
+    assert_single_next(result.stdout, " ".join(command))
     return result.stdout
 
 
@@ -127,6 +128,11 @@ def run_python_expect_failure(*args: str, cwd: Path = ROOT) -> None:
     print(result.stdout, end="")
     if result.returncode == 0:
         raise SystemExit("command unexpectedly succeeded")
+
+
+def assert_single_next(output: str, label: str) -> None:
+    if output.count("NEXT") != 1:
+        raise SystemExit(f"{label} did not provide exactly one NEXT action")
 
 
 def snapshot_files(root: Path) -> dict[str, bytes]:
@@ -262,7 +268,7 @@ def main() -> int:
         run_python("aps.py", "init", str(project), "--host", "generic", "--no-launch", "--no-git")
         run_python("aps.py", "doctor", str(project), "--host", "generic", "--standard-only")
         bootstrap_prompt = (project / ".ai" / "bootstrap" / "bootstrap-prompt.txt").read_text(encoding="utf-8")
-        required_prompt_markers = ("优点", "缺点", "适用条件", "主要风险", "直接回答原始研究问题", "分析关键证据", "用户需要 PRD 时", "prd-snapshot.md")
+        required_prompt_markers = ("优点", "缺点", "适用条件", "主要风险", "直接回答原始研究问题", "分析关键证据", "用户需要 PRD 时", "prd-snapshot.md", "Stage User Brief", "不要每轮对话重复", "当前 Stage / Task")
         if any(marker not in bootstrap_prompt for marker in required_prompt_markers):
             raise SystemExit("bootstrap prompt does not require decision and research analysis")
         plan_prompt_markers = ("Codex", "Plan 模式", "Stage 01、05、06、07、08、09、10、13、14、15、16、20", "Host capability blocker")
@@ -366,6 +372,10 @@ def main() -> int:
         profile = project / ".ai" / "project-profile.json"
         profile.write_text((project / ".ai" / "templates" / "project-profile.json").read_text(encoding="utf-8"), encoding="utf-8")
         write_transition_audit(project)
+        (project / ".ai" / "registry.yaml").write_text(
+            (project / ".ai" / "templates" / "registry.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
         before_menu_cancel = snapshot_files(project)
         menu_output = run_python_with_input("3\nn\n", str(ROOT / "aps.py"), cwd=project)
         if "已取消 rebaseline" not in menu_output or snapshot_files(project) != before_menu_cancel:
@@ -499,10 +509,38 @@ def main() -> int:
         )
         state.write_text(cycle_two_complete_wrong_stage, encoding="utf-8")
         write_transition_audit(project)
-        (project / ".ai" / "registry.yaml").write_text(
-            (project / ".ai" / "templates" / "registry.yaml").read_text(encoding="utf-8"),
+        registry = project / ".ai" / "registry.yaml"
+        registry_before = registry.read_bytes()
+        registry.write_text(
+            """schema_version: 1
+standard_version: "1.3.0"
+revision: 1
+sources:
+  broken_source:
+    domain: Broken Source
+    path: ../outside
+    status: ACTIVE
+    load_policy: stage
+artifacts: {}
+dependencies: {}
+critical_skills: {}
+""",
             encoding="utf-8",
         )
+        bad_registry_doctor = run_python_expect_failure_capture("aps.py", "doctor", str(project), "--host", "generic", "--standard-only")
+        bad_registry_status = run_python_expect_failure_capture("aps.py", "status", str(project))
+        bad_registry_resume = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
+        for output, label in (
+            (bad_registry_doctor, "bad registry doctor"),
+            (bad_registry_status, "bad registry status"),
+            (bad_registry_resume, "bad registry resume"),
+        ):
+            assert_single_next(output, label)
+            if "registry.yaml.sources.broken_source.path" not in output or "templates/registry.yaml" not in output:
+                raise SystemExit(f"{label} did not provide precise Registry repair guidance")
+        if "APS Agent Handoff" in bad_registry_resume:
+            raise SystemExit("bad Registry generated a normal resume handoff")
+        registry.write_bytes(registry_before)
         wrong_stage_rebaseline = run_python_expect_failure_capture("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
         if "Stage 23" not in wrong_stage_rebaseline:
             raise SystemExit("rebaseline accepted a completed non-Stage-23 cycle")
@@ -723,7 +761,7 @@ def main() -> int:
         run_python("aps.py", "status", str(project))
         snapshot.write_text(snapshot.read_text(encoding="utf-8").replace(f"Source State Revision：{current_revision}", "Source State Revision：1"), encoding="utf-8")
         stale_snapshot = run_python_expect_failure_capture("aps.py", "status", str(project))
-        if "PRD Snapshot" not in stale_snapshot or "Source State Revision" not in stale_snapshot:
+        if "PRD Snapshot" not in stale_snapshot or "Source State Revision" not in stale_snapshot or "aps status" not in stale_snapshot or "doctor --standard-only" in stale_snapshot:
             raise SystemExit("stale PRD Snapshot was not rejected")
         snapshot.unlink()
         run_python("aps.py", "doctor", str(project), "--host", "generic")

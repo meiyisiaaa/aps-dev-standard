@@ -6,17 +6,30 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import __version__, STANDARD_VERSION
 from .decision import DecisionError, answer_request, cancel_request, list_requests, load_runtime_state, register_request, show_request
-from .governance import load_project_profile, profile_status, runtime_governance_problems
+from .governance import GovernanceProblem, governance_problem, load_project_profile, profile_status, registry_problems, runtime_governance_problems
 from .installer import BEGIN_AGENTS, BEGIN_GITIGNORE, END_AGENTS, END_GITIGNORE, SHA256_RE, assert_no_reparse, install_standard, is_safe_version, sha256
 from .research import render_brief
 
 HOSTS = ("codex", "generic")
 PLAN_MODE_REQUIRED_STAGES = frozenset({1, 5, 6, 7, 8, 9, 10, 13, 14, 15, 16, 20})
 MANAGED_PATH_PREFIX = ".ai/"
+
+
+@dataclass(frozen=True)
+class Diagnostic:
+    """An internal, non-persistent diagnostic with one recovery route."""
+
+    code: str
+    marker: str
+    problem: str
+    cause: str
+    next_action: str
+    exit_code: int = 2
 
 
 def configure_stdio() -> None:
@@ -279,38 +292,70 @@ def recovery(cause: str, next_action: str) -> None:
     print(f"NEXT  {next_action}")
 
 
-def governance_next_action(problem: str) -> str:
-    if "当前 state" in problem:
-        return "运行 `aps doctor --standard-only`，按第一项状态问题人工修复 `.ai/state.yaml`，再运行 `aps status`。"
-    if "PRD Snapshot" in problem:
-        return "在 Host 中更新当前 Cycle 的 `08_PRD_SNAPSHOT.md`，补齐最新 Source State Revision 和来源引用，再运行 `aps status`。"
-    if "project-profile" in problem or "风险基线" in problem or "risk_profile" in problem:
-        return "在 Host 中按 `.ai/templates/project-profile.json` 创建或修复 `.ai/project-profile.json`，再运行 `aps doctor`。"
-    if "Transition" in problem or "审计" in problem:
-        return "在 Host 中人工修复或补齐 `.ai/audit/transitions.jsonl`，使最后一条记录与 `.ai/state.yaml` 一致，再运行 `aps doctor`。"
-    return "在 Host 中按 `.ai/templates/release-readiness.json` 补齐 `.ai/release-readiness.json`，再运行 `aps doctor`。"
+GOVERNANCE_CAUSES = {
+    "registry": "Registry 缺失或无法严格解析，Agent 不能安全定位当前 Source of Truth。",
+    "project_profile": "项目风险基线缺失或无法严格解析，APS 不会猜测为 NORMAL。",
+    "transition_audit": "Stage / Gate / Cycle 审计链缺失、断裂或未对齐当前状态。",
+    "release_readiness": "Release readiness 缺失或未满足当前风险级别的必需检查。",
+    "prd_snapshot": "当前 PRD Snapshot 的来源 revision 或字段不完整，不能证明它反映当前状态。",
+}
+
+GOVERNANCE_NEXT_ACTIONS = {
+    "registry": "在 Host 中按 `.ai/templates/registry.yaml` 修复 `.ai/registry.yaml`，再运行 `aps doctor --standard-only`。",
+    "project_profile": "在 Host 中按 `.ai/templates/project-profile.json` 创建或修复 `.ai/project-profile.json`，再运行 `aps doctor`。",
+    "transition_audit": "在 Host 中人工修复或补齐 `.ai/audit/transitions.jsonl`，使最后一条记录与 `.ai/state.yaml` 一致，再运行 `aps doctor`。",
+    "release_readiness": "在 Host 中按 `.ai/templates/release-readiness.json` 补齐 `.ai/release-readiness.json`，再运行 `aps doctor`。",
+    "prd_snapshot": "在 Host 中更新当前 Cycle 的 `08_PRD_SNAPSHOT.md`，补齐最新 Source State Revision 和来源引用，再运行 `aps status`。",
+}
 
 
-def governance_cause(problem: str) -> str:
-    if "PRD Snapshot" in problem:
-        return "当前 PRD Snapshot 的来源 revision 或字段不完整，不能证明它反映当前状态。"
-    if "project-profile" in problem or "风险基线" in problem or "risk_profile" in problem:
-        return "项目风险基线缺失或无法严格解析，APS 不会猜测为 NORMAL。"
-    if "Transition" in problem or "审计" in problem:
-        return "Stage / Gate / Cycle 审计链缺失、断裂或未对齐当前状态。"
-    return "Release readiness 缺失或未满足当前风险级别的必需检查。"
+def governance_diagnostic(
+    problem: GovernanceProblem,
+    *,
+    action: str | None = None,
+    standard_only: bool = False,
+    marker: str = "FAIL",
+) -> Diagnostic:
+    cause = GOVERNANCE_CAUSES.get(problem.code, "项目治理校验未通过，APS 不会猜测或绕过当前状态。")
+    next_action = action or GOVERNANCE_NEXT_ACTIONS.get(
+        problem.code,
+        "运行 `aps doctor --standard-only`，按第一项治理问题人工修复后再运行 `aps status`。",
+    )
+    if standard_only and action is None and problem.code != "prd_snapshot":
+        next_action = next_action.replace("aps doctor`", "aps doctor --standard-only`").replace("aps doctor。", "aps doctor --standard-only。")
+    detail = problem.message
+    if problem.path and problem.path not in detail:
+        detail = f"{detail}（路径：{problem.path}）"
+    return Diagnostic(
+        code=problem.code,
+        marker=marker,
+        problem=f"项目治理校验失败：{detail}",
+        cause=cause,
+        next_action=next_action,
+    )
 
 
-def print_governance_failure(problem: str, *, action: str | None = None) -> None:
-    print(f"FAIL  项目治理校验失败：{problem}")
-    recovery(governance_cause(problem), action or governance_next_action(problem))
+def emit_diagnostic(diagnostic: Diagnostic) -> int:
+    print(f"{diagnostic.marker}  {diagnostic.problem}")
+    recovery(diagnostic.cause, diagnostic.next_action)
+    return diagnostic.exit_code
+
+
+def print_governance_failure(
+    problem: GovernanceProblem,
+    *,
+    action: str | None = None,
+    standard_only: bool = False,
+    marker: str = "FAIL",
+) -> None:
+    emit_diagnostic(governance_diagnostic(problem, action=action, standard_only=standard_only, marker=marker))
 
 
 def command_hint(argv: list[str]) -> str:
     return " ".join(f'"{arg}"' if any(char.isspace() for char in arg) else arg for arg in ("aps", *argv))
 
 
-def _runtime_summary(root: Path) -> list[str]:
+def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
     state_path = root / ".ai" / "state.yaml"
     if not state_path.is_file():
         return [
@@ -332,16 +377,17 @@ def _runtime_summary(root: Path) -> list[str]:
         f"Stage: {state.get('stage', 'unknown')} / {state.get('stage_type', 'unknown')}",
         f"Status: {state.get('stage_status', 'unknown')}",
     ]
-    profile, profile_error = load_project_profile(root)
-    if profile is not None:
-        lines.append(f"Risk profile: {profile['risk_profile']}")
-        lines.append(f"Workstreams: {len(profile['workstreams'])}")
-    elif profile_error:
-        profile_path = root / ".ai" / "project-profile.json"
-        if profile_path.exists() or profile_path.is_symlink():
-            lines.append(f"Risk profile: invalid（{profile_error}）")
-        else:
-            lines.append("Risk profile: not initialized（风险基线尚未初始化）")
+    if include_profile:
+        profile, profile_error = load_project_profile(root)
+        if profile is not None:
+            lines.append(f"Risk profile: {profile['risk_profile']}")
+            lines.append(f"Workstreams: {len(profile['workstreams'])}")
+        elif profile_error:
+            profile_path = root / ".ai" / "project-profile.json"
+            if profile_path.exists() or profile_path.is_symlink():
+                lines.append(f"Risk profile: invalid（{profile_error}）")
+            else:
+                lines.append("Risk profile: not initialized（风险基线尚未初始化）")
     if stage_requires_plan_mode(state):
         lines.append("Mode gate: PLAN (required on Stage entry)（进入阶段前必须打开 Plan 模式）")
         lines.append("Mode action: 先在当前 Host 打开原生 Plan 模式并确认计划，再切换普通模式执行文件修改。")
@@ -544,14 +590,32 @@ def run_doctor(root: Path, host: str, strict_runtime: bool = True) -> int:
             return 2
         profile, governance_problems = runtime_governance_problems(root, state)
         if governance_problems:
-            print_governance_failure(governance_problems[0])
+            print_governance_failure(governance_problems[0], standard_only=not strict_runtime)
             return 2
-    elif (root / ".ai" / "project-profile.json").exists() or (root / ".ai" / "project-profile.json").is_symlink():
-        # A profile is optional before Bootstrap, but an explicitly created one must still be valid.
-        _, profile_error = load_project_profile(root)
-        if profile_error:
-            print_governance_failure(profile_error, action="在 Host 中按 `.ai/templates/project-profile.json` 修复 `.ai/project-profile.json`，再运行 `aps doctor --standard-only`。")
-            return 2
+    else:
+        registry_path = root / ".ai" / "registry.yaml"
+        registry_required = registry_path.exists() or registry_path.is_symlink()
+        registry_required = registry_required or any(
+            (root / relative).exists() or (root / relative).is_symlink()
+            for relative in (".ai/project-profile.json", ".ai/audit/transitions.jsonl")
+        )
+        if registry_required:
+            registry_issues = registry_problems(root)
+            if registry_issues:
+                print_governance_failure(
+                    governance_problem("registry", registry_issues[0], ".ai/registry.yaml"),
+                    standard_only=not strict_runtime,
+                )
+                return 2
+        if (root / ".ai" / "project-profile.json").exists() or (root / ".ai" / "project-profile.json").is_symlink():
+            # A profile is optional before Bootstrap, but an explicitly created one must still be valid.
+            _, profile_error = load_project_profile(root)
+            if profile_error:
+                print_governance_failure(
+                    governance_problem("project_profile", profile_error, ".ai/project-profile.json"),
+                    action="在 Host 中按 `.ai/templates/project-profile.json` 修复 `.ai/project-profile.json`，再运行 `aps doctor --standard-only`。",
+                )
+                return 2
     cmd = [sys.executable, str(lint)]
     if strict_runtime:
         cmd += ["--project-root", str(root), "--host", host]
@@ -660,6 +724,21 @@ def cmd_resume(args: argparse.Namespace) -> int:
             print(f"REFUSE  Runtime state 无法严格解析：{state_error}")
             recovery("状态损坏时 APS 不会猜测普通模式，也不会启动普通会话。", "运行 `aps doctor --standard-only`，修复第一项状态问题后再运行 `aps resume --no-launch`。")
             return 2
+        registry_path = root / ".ai" / "registry.yaml"
+        registry_required = registry_path.exists() or registry_path.is_symlink()
+        registry_required = registry_required or any(
+            (root / relative).exists() or (root / relative).is_symlink()
+            for relative in (".ai/project-profile.json", ".ai/audit/transitions.jsonl")
+        )
+        if registry_required:
+            registry_issues = registry_problems(root)
+            if registry_issues:
+                print_governance_failure(
+                    governance_problem("registry", registry_issues[0], ".ai/registry.yaml"),
+                    standard_only=True,
+                    marker="REFUSE",
+                )
+                return 2
         if state is not None:
             profile_path = root / ".ai" / "project-profile.json"
             audit_path = root / ".ai" / "audit" / "transitions.jsonl"
@@ -675,7 +754,7 @@ def cmd_resume(args: argparse.Namespace) -> int:
                 )
             _, governance_problems = runtime_governance_problems(root, state)
             if governance_problems:
-                print_governance_failure(governance_problems[0], action=governance_next_action(governance_problems[0]).replace("aps doctor", "aps doctor --standard-only"))
+                print_governance_failure(governance_problems[0], standard_only=True, marker="REFUSE")
                 return 2
         return launch_host(
             root,
@@ -738,7 +817,7 @@ def cmd_rebaseline(args: argparse.Namespace) -> int:
         return 2
     _, governance_problems = runtime_governance_problems(root, runtime)
     if governance_problems:
-        print_governance_failure(governance_problems[0], action=governance_next_action(governance_problems[0]).replace("aps doctor", "aps doctor --standard-only"))
+        print_governance_failure(governance_problems[0], standard_only=True, marker="REFUSE")
         return 2
     if runtime["cycle"] != "CYCLE-001" and runtime["stage_status"] != "COMPLETE":
         print(f"REFUSE  当前 Cycle {runtime['cycle']} 尚未完成，不能再创建 Cycle。")
@@ -905,6 +984,19 @@ def cmd_status(args: argparse.Namespace) -> int:
         return 2
 
     state_exists = state.exists() or state.is_symlink()
+    registry_path = root / ".ai" / "registry.yaml"
+    registry_required = registry_path.exists() or registry_path.is_symlink()
+    registry_required = registry_required or any(
+        (root / relative).exists() or (root / relative).is_symlink()
+        for relative in (".ai/project-profile.json", ".ai/audit/transitions.jsonl")
+    )
+    if registry_required:
+        registry_issues = registry_problems(root)
+        if registry_issues:
+            print_governance_failure(
+                governance_problem("registry", registry_issues[0], ".ai/registry.yaml"),
+            )
+            return 2
     if not state_exists:
         print("Runtime state: not initialized")
         profile, profile_error = load_project_profile(root)
@@ -912,7 +1004,10 @@ def cmd_status(args: argparse.Namespace) -> int:
             print(f"Risk profile: {profile['risk_profile']}")
             print(f"Workstreams: {len(profile['workstreams'])}")
         elif profile_error and ((root / ".ai" / "project-profile.json").exists() or (root / ".ai" / "project-profile.json").is_symlink()):
-            print_governance_failure(profile_error, action="在 Host 中按 `.ai/templates/project-profile.json` 修复 `.ai/project-profile.json`，再运行 `aps doctor --standard-only`。")
+            print_governance_failure(
+                governance_problem("project_profile", profile_error, ".ai/project-profile.json"),
+                action="在 Host 中按 `.ai/templates/project-profile.json` 修复 `.ai/project-profile.json`，再运行 `aps doctor --standard-only`。",
+            )
             return 2
         print("NEXT  运行 `aps resume --no-launch`，让 Agent Host 完成 Bootstrap。")
         return 0
@@ -932,7 +1027,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     profile, _ = load_project_profile(root)
     if profile is not None:
         print(f"Workstreams: {len(profile['workstreams'])}")
-    for line in _runtime_summary(root):
+    for line in _runtime_summary(root, include_profile=False):
         print("  " + line)
     return 0
 

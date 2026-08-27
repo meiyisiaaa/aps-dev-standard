@@ -1551,6 +1551,8 @@ Global Gate / Change Control
 
 Task-local Code、Tests、Evidence MAY 并行，但必须遵守 Task 的 Files Allowed / Ownership；两个并行 Task 触碰同一 Source of Truth 时必须序列化。
 
+并行 Task 的交接应优先传递变更文件、接口影响、依赖状态和 Evidence refs；Coordinator 合并前重新验证跨 workstream 依赖，不能把 Task-local 完成直接当作全局 Gate PASS。
+
 ---
 
 # 25. Evidence / Binary Retention

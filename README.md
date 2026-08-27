@@ -130,6 +130,8 @@ After switching conversations, run `aps status` or `aps resume --no-launch` to p
 
 Before ending, pausing, blocking, or handing off any Stage, output a one-page Stage User Brief in the current conversation with: goal, inputs, completed work, incomplete work, user decisions, confirmation impact, and verification results. The Stage Artifact must also contain or reference an Artifact Contract with its purpose, inputs, outputs, acceptance criteria, current status, blocking decisions, and next stage. A written document alone does not mean the Stage is complete.
 
+交接优化：Stage User Brief 只在阶段完成、阻塞、暂停或切换对话时输出，不要求每轮重复；handoff 只携带当前 Stage / Task 和直接引用，旧 Cycle 与完整 Standard 按需读取。大型项目的并行 Task 只交接变更文件、接口影响、依赖状态和 Evidence refs，由 Coordinator 统一更新全局治理状态。
+
 研究路径：先在当前对话直接回答原始问题并分析关键证据，再把完整报告写入 Stage Artifact；使用 `aps research brief <ARTIFACT>` 展示摘要。Artifact 必须包含稳定的 `## Research Brief` 标识和六类必需字段，缺失时按 CLI 提示补齐。
 
 PRD 路径：APS 不增加独立 PRD Stage。Stage 08 `08_REQUIREMENTS.md` 仍是需求核心来源；需要单页产品视图时，可将 `.ai/templates/prd-snapshot.md` 复制到当前 Cycle 的 `08-requirements/08_PRD_SNAPSHOT.md`，并只引用 Stage 05–09 的有效 Artifact 与 `DEC-*`。它是可选派生汇总，不是第二个 Source of Truth，也不新增 Gate。

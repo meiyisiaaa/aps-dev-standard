@@ -151,6 +151,8 @@ Bootstrap MUST 让用户确认一个项目风险级别，并写入 `.ai/project-
 
 所有项目 MUST 追加 `.ai/audit/transitions.jsonl`；`LARGE` / `REGULATED` 的记录和 Evidence 深度更高。每条记录至少包含 from/to state、原因、Actor 和 Evidence refs；记录必须单调追加，最后一条 `to_state` 必须与 `.ai/state.yaml` 一致。它补足当前状态快照不能证明历史流转的问题，但不替代 Git、Decision Log 或 Stage Artifact。
 
+Transition 审计只能证明当前文件中的格式、顺序和状态链路可校验，不能单独证明历史行未被人为修改或 Evidence 真实有效；需要完整可信度时，仍须结合 Git 历史、仓库权限和人工审查。
+
 每个 Stage 在完成、阻塞、暂停或切换对话前，MUST 在当前对话输出一页 Stage User Brief。固定包含：
 
 ```text
@@ -2592,6 +2594,8 @@ Design System Agent Skill（使用 Agent Skill 时）
 把开发拆成 AI 可独立完成、独立验证的原子任务。
 
 大型项目必须为每个 Task 标注所属 `workstream`（例如 `WS-CORE`），并在需要时记录 parent Task、依赖和跨 workstream 接口。不同 workstream 可以并行执行 Task-local Code / Tests / Evidence；修改全局 `state.yaml`、Gate、Decision、Registry 或共享 Schema 时仍由 Coordinator 单写，不能用并行任务绕过统一主线。
+
+并行 Task 的最小交接只包含变更文件、接口影响、依赖状态和 Evidence refs；Coordinator 合并前必须重新检查跨 workstream 依赖，Task-local 完成不得直接推导全局 Gate PASS。
 
 ## 执行
 

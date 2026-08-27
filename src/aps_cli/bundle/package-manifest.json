@@ -28,7 +28,7 @@
     ".ai/templates/design-system-skill/references/README.md"
   ],
   "payload_sha256": {
-    "bootstrap/bootstrap-prompt.txt": "e93aed0789604ef300c270f2fb55775bef206792cdd0bd64e29a909c9b51065e",
+    "bootstrap/bootstrap-prompt.txt": "cbb93f768bb53c16c55659bd5d39ccfc29bdcc907054218b917847ead3109dea",
     "bootstrap/rebaseline-existing-project.txt": "146c4e399d773310088a8317f89062461463516253f3b8396e20237ec2a524b7",
     "gitignore.fragment": "48dcd6fba9419b86a90a332de00eada9ade22ab5bfb3d23314241c675057c5c6",
     "schemas/decision-request.schema.json": "191784897b32339f1734e70cefdd96adafe633674c217ddc58e164457ff3f933",
@@ -37,8 +37,8 @@
     "schemas/release-readiness.schema.json": "1bfad9f5c24f94affbbcafb04b41b92fca7a064a89a68cd72d550d3bddde0f7a",
     "schemas/state.schema.json": "dfdd99b9efd7aa72b8f6743d03eeeb76a70fa566072d380090d86b50eebed864",
     "schemas/transition-record.schema.json": "79ecc3d24330bf6ff875daf51f192a56d279cc2fd1058580cbc2b9fe9bb2fafb",
-    "standards/artifact-state.md": "f942b769cbadc67d1ff6944915af71041143c63d0e704814535591cba69aaf88",
-    "standards/lifecycle.md": "adfe6217d975e0e2126a087ae05fd54e229389cc42e63573495ae0d7c982b746",
+    "standards/artifact-state.md": "09650deb88965aa9e04cb21dd214877a5318078f49e28e49d4181775d4b5a316",
+    "standards/lifecycle.md": "fede7d41be05460d8865bc894b179b3cf8becffe8cbb72fbae754a815661aaee",
     "templates/AGENTS.block.md": "96214cbc87cf6bb695969d1177ae7f61abedc337fd0c0d3405c9f3bc2a15fea6",
     "templates/decision-request.json": "079131f4d3153a48b8e4d5ade6eff410bdcc33a98d3a979bc156969305167af0",
     "templates/decisions.md": "9414c3309cf6eb96b63aff195a63ed81c59805236dde3270e6f29ae51c776916",

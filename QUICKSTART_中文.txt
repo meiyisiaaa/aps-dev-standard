@@ -53,6 +53,8 @@ Bootstrap 时必须让用户确认项目风险级别并写入 .ai/project-profil
 6. 待决策时运行 aps decision show/list，在当前对话完成决策卡分析，再运行 aps decision answer 或 aps decision cancel。
 7. 风险基线、Transition 审计或 Release readiness 损坏时，APS 会拒绝继续；按 status / doctor 输出的唯一 NEXT 修复，不要猜测为 NORMAL 或手动把 Gate 改成 PASS。
 
+交接时只携带当前 Stage / Task 和直接引用；Stage User Brief 只在完成、阻塞、暂停或切换对话时输出，不要每轮重复。大型项目可以并行 Task，但全局状态、Gate、Decision 和 Registry 仍由 Coordinator 统一维护。
+
 常用：
 aps init        新项目
 aps resume      首次接管旧项目，之后只恢复状态
