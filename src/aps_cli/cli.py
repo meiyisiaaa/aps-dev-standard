@@ -192,7 +192,7 @@ def runtime_state(root: Path) -> tuple[dict | None, str | None]:
         return None, "state.yaml 不能是符号链接"
     try:
         return load_runtime_state(root), None
-    except DecisionError as exc:
+    except (DecisionError, OSError, RuntimeError) as exc:
         return None, str(exc)
 
 

@@ -33,7 +33,7 @@
     "gitignore.fragment": "48dcd6fba9419b86a90a332de00eada9ade22ab5bfb3d23314241c675057c5c6",
     "schemas/decision-request.schema.json": "191784897b32339f1734e70cefdd96adafe633674c217ddc58e164457ff3f933",
     "schemas/project-profile.schema.json": "f858da97b6dbde9b1d9dab11f363a51c36bb5356c304aad50cd113ae7bdc07bd",
-    "schemas/registry.schema.json": "7f938589946e5ebcf71916c2fb3258b660cb08ba5dbb468f8014c6b2a52fb1fb",
+    "schemas/registry.schema.json": "382ac3106e925a4531702529857f1a7938d437fb8d09d10d97b55e714becda1a",
     "schemas/release-readiness.schema.json": "1bfad9f5c24f94affbbcafb04b41b92fca7a064a89a68cd72d550d3bddde0f7a",
     "schemas/state.schema.json": "dfdd99b9efd7aa72b8f6743d03eeeb76a70fa566072d380090d86b50eebed864",
     "schemas/transition-record.schema.json": "79ecc3d24330bf6ff875daf51f192a56d279cc2fd1058580cbc2b9fe9bb2fafb",

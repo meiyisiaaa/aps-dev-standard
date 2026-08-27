@@ -13,6 +13,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 
 
 def configure_stdio() -> None:
@@ -541,6 +542,39 @@ critical_skills: {}
         if "APS Agent Handoff" in bad_registry_resume:
             raise SystemExit("bad Registry generated a normal resume handoff")
         registry.write_bytes(registry_before)
+        registry.write_text(
+            """schema_version: 1
+standard_version: "1.3.0"
+revision: 1
+revision: 2
+sources:
+  duplicate_source:
+    domain: Duplicate Source
+    path: .ai/standards/lifecycle.md
+    status: ACTIVE
+    load_policy: stage
+artifacts: {}
+dependencies: {}
+critical_skills: {}
+""",
+            encoding="utf-8",
+        )
+        duplicate_registry = run_python_expect_failure_capture("aps.py", "status", str(project))
+        if "字段重复" not in duplicate_registry:
+            raise SystemExit("duplicate Registry fields were accepted")
+        registry.write_bytes(registry_before)
+
+        from aps_cli import cli as cli_module
+
+        original_load_runtime_state = cli_module.load_runtime_state
+        try:
+            cli_module.load_runtime_state = lambda _root: (_ for _ in ()).throw(RuntimeError("simulated reparse point"))
+            _, runtime_error = cli_module.runtime_state(project)
+        finally:
+            cli_module.load_runtime_state = original_load_runtime_state
+        if runtime_error != "simulated reparse point":
+            raise SystemExit("runtime_state did not normalize reparse errors")
+
         wrong_stage_rebaseline = run_python_expect_failure_capture("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
         if "Stage 23" not in wrong_stage_rebaseline:
             raise SystemExit("rebaseline accepted a completed non-Stage-23 cycle")

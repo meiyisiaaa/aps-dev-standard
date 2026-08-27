@@ -327,17 +327,7 @@ def _read_registry(path: Path) -> dict[str, Any]:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise GovernanceError(f"Registry 无法读取：{exc}") from exc
-    try:
-        import yaml
-    except ImportError:
-        return _parse_registry_subset(text)
-    try:
-        value = yaml.safe_load(text)
-    except Exception as exc:
-        raise GovernanceError(f"Registry YAML 无法解析：{exc}") from exc
-    if not isinstance(value, dict):
-        raise GovernanceError("registry.yaml 顶层必须是对象")
-    return value
+    return _parse_registry_subset(text)
 
 
 def _safe_registry_path(value: object) -> bool:
