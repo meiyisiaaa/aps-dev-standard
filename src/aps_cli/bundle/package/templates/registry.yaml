@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=./schemas/registry.schema.json
 schema_version: 1
-standard_version: "1.2.2"
+standard_version: "1.3.0"
 revision: 1
 
 sources:
@@ -24,6 +24,21 @@ sources:
     path: .ai/decisions.md
     status: ACTIVE
     load_policy: referenced-only
+  project_profile:
+    domain: Project Governance Profile
+    path: .ai/project-profile.json
+    status: ACTIVE
+    load_policy: always-minimal
+  transition_audit:
+    domain: Transition Audit
+    path: .ai/audit/transitions.jsonl
+    status: ACTIVE
+    load_policy: stage/on-demand
+  release_readiness:
+    domain: Release Readiness
+    path: .ai/release-readiness.json
+    status: ACTIVE
+    load_policy: release-only
 
 artifacts: {}
 dependencies: {}

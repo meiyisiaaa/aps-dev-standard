@@ -1,0 +1,12 @@
+{
+  "$schema": ".ai/schemas/release-readiness.schema.json",
+  "schema_version": 1,
+  "release_id": "REL-001",
+  "profile": "NORMAL",
+  "status": "DRAFT",
+  "target_environment": "staging",
+  "checks": {},
+  "workstream_refs": [],
+  "reviewed_at": null,
+  "approved_by": null
+}

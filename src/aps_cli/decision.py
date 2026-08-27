@@ -14,7 +14,7 @@ from .installer import assert_no_reparse, atomic_write
 
 DECISION_ID_RE = re.compile(r"^DEC-[A-Z0-9][A-Z0-9_-]*$")
 CYCLE_RE = re.compile(r"^CYCLE-[0-9]{3,}$")
-STANDARD_VERSION_RE = re.compile(r"^1\.(?:1|2)\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
+STANDARD_VERSION_RE = re.compile(r"^1\.(?:1|2|3)\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
 INPUT_TYPES = {
     "single_select",
     "multi_select",

@@ -7,6 +7,9 @@
 - Runtime state: `.ai/state.yaml` when initialized
 - Source registry: `.ai/registry.yaml` when initialized
 - Decision log: `.ai/decisions.md` when initialized
+- Risk baseline: `.ai/project-profile.json` when initialized
+- Transition audit: all projects maintain `.ai/audit/transitions.jsonl`; deeper evidence for LARGE / REGULATED projects
+- Release readiness: `.ai/release-readiness.json` at the Release boundary
 - Standards lint: `python .ai/tools/standards-lint.py --project-root . --host codex`
 
 Execution rules:

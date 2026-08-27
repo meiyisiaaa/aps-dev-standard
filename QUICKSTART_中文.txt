@@ -12,8 +12,8 @@ git diff --cached --check
 git commit -m "Configure APS distribution"
 git push
 
-git tag v1.2.2
-git push origin v1.2.2
+git tag v1.3.0
+git push origin v1.3.0
 
 之后任何机器：
 
@@ -42,6 +42,8 @@ aps resume --no-launch
 aps doctor
 aps status
 
+Bootstrap 时必须让用户确认项目风险级别并写入 .ai/project-profile.json：NORMAL（普通）、LARGE（大型）或 REGULATED（强合规）。所有项目维护 .ai/audit/transitions.jsonl；大型项目按模块或工作流填写 workstreams；Stage 20 Release 前按级别补齐 .ai/release-readiness.json。风险级别不增加 Stage，用户 Gate 仍需单独确认。
+
 遇到阻塞后的恢复：
 1. 先运行 aps status，只执行输出的唯一 NEXT。
 2. 运行状态缺失或无法解析时，先运行 aps doctor --standard-only 获取第一项问题；doctor 不会自动修复坏状态，需人工修复 .ai/state.yaml 后再运行 aps resume --no-launch；损坏状态不会被猜测为 NORMAL。
@@ -49,6 +51,7 @@ aps status
 4. Standard 版本不匹配或托管文件冲突时，先人工合并 .ai/incoming/<version>/，再运行 aps upgrade；不要自动合并本地修改。
 5. 除非明确接受备份后覆盖，不要使用 --force-managed。
 6. 待决策时运行 aps decision show/list，在当前对话完成决策卡分析，再运行 aps decision answer 或 aps decision cancel。
+7. 风险基线、Transition 审计或 Release readiness 损坏时，APS 会拒绝继续；按 status / doctor 输出的唯一 NEXT 修复，不要猜测为 NORMAL 或手动把 Gate 改成 PASS。
 
 常用：
 aps init        新项目

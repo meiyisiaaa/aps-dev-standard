@@ -1,8 +1,8 @@
 # AI 产品开发生命周期标准（Full-Cycle Engineering Standard）
 
-**Standard Version:** `1.2.2`<br>
+**Standard Version:** `1.3.0`<br>
 **Status:** `ACTIVE`  
-**Companion Artifact Standard:** `1.2.2`
+**Companion Artifact Standard:** `1.3.0`
 
 > 本标准定义 AI 参与产品开发时的统一生命周期、Stage Contract、Gate、Agent Runtime、Skill、验证、追踪和变更规则。  
 > AI 必须按阶段推进；不得用未确认假设替代重大决策，不得绕过关键 Gate，不得把聊天内容视为已经落盘的项目状态。  
@@ -136,6 +136,20 @@ Stage 22 在存在 Active Change 时同样需要 Plan 模式。Plan 阶段至少
 如果 Host 无法打开或确认原生 Plan 模式，Agent MUST NOT 假装已经切换；应记录 Host capability blocker，停止工作区变更，等待用户切换 Host 模式或使用已记录的等价 fallback。`aps status` 和 handoff 必须显示当前 Mode Gate；Codex Host 在该 Gate 未满足时不得自动启动普通会话。
 
 Research Stage 02–04 默认不强制 Plan 模式；只有研究范围、方法或证据成本复杂时，才先用 Plan 设计研究方案。实际研究仍必须在当前对话直接回答原始问题并输出 Research Brief。
+
+### 0.3.2 Project Risk Profile / Workstream
+
+Bootstrap MUST 让用户确认一个项目风险级别，并写入 `.ai/project-profile.json`：
+
+| Machine ID | 中文含义 | 额外要求 |
+|---|---|---|
+| `NORMAL` | 普通 | 保留基础验证、回滚和最小 Transition 审计证据 |
+| `LARGE` | 大型 | 按模块 / 工作流拆分 `workstreams`，增加集成、性能、迁移、监控、灾备、值班、外部验收和更完整的 Transition 审计证据 |
+| `REGULATED` | 强合规 | 在大型项目要求上增加隐私 / 合规、可追溯性、审批和审计留存证据 |
+
+风险级别不是新的 Stage，也不能跳过任何当前 Stage。它只决定 Evidence、Release readiness 和审计深度；当数据敏感性、部署拓扑、Scope 或合规义务变化时，必须重新评估级别。大型项目可以并行执行不同 workstream 的 Task / Artifact，但全局 Cycle、Gate 和状态仍由 Coordinator 单写。
+
+所有项目 MUST 追加 `.ai/audit/transitions.jsonl`；`LARGE` / `REGULATED` 的记录和 Evidence 深度更高。每条记录至少包含 from/to state、原因、Actor 和 Evidence refs；记录必须单调追加，最后一条 `to_state` 必须与 `.ai/state.yaml` 一致。它补足当前状态快照不能证明历史流转的问题，但不替代 Git、Decision Log 或 Stage Artifact。
 
 每个 Stage 在完成、阻塞、暂停或切换对话前，MUST 在当前对话输出一页 Stage User Brief。固定包含：
 
@@ -2577,6 +2591,8 @@ Design System Agent Skill（使用 Agent Skill 时）
 
 把开发拆成 AI 可独立完成、独立验证的原子任务。
 
+大型项目必须为每个 Task 标注所属 `workstream`（例如 `WS-CORE`），并在需要时记录 parent Task、依赖和跨 workstream 接口。不同 workstream 可以并行执行 Task-local Code / Tests / Evidence；修改全局 `state.yaml`、Gate、Decision、Registry 或共享 Schema 时仍由 Coordinator 单写，不能用并行任务绕过统一主线。
+
 ## 执行
 
 ```text
@@ -3083,11 +3099,12 @@ rollback
 ```text
 20_RELEASE_CHECKLIST.md
 20_RELEASE_NOTES.md
+可机器校验的 Release readiness：`.ai/release-readiness.json`
 ```
 
 ## Gate
 
-发布由用户确认。
+发布由用户确认。`release-readiness.json` 只证明对应风险级别的技术 / 合规检查和 Evidence 已满足；用户确认不等于机器检查 PASS，机器检查 PASS 也不替代用户 Gate。
 
 ---
 

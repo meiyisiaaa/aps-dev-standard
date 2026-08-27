@@ -7,7 +7,7 @@
   "required": ["schema_version", "standard_version", "revision", "sources", "artifacts", "dependencies", "critical_skills"],
   "properties": {
     "schema_version": {"const": 1},
-    "standard_version": {"type": "string", "pattern": "^1\\.(1|2)\\."},
+    "standard_version": {"type": "string", "pattern": "^1\\.(1|2|3)\\."},
     "revision": {"type": "integer", "minimum": 1},
     "sources": {
       "type": "object",

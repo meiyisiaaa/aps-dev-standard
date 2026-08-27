@@ -33,7 +33,7 @@ PY
   then
     echo "FAIL  APS_VERSION 不是安全版本组件：$VERSION" >&2
     echo "原因：版本不能包含路径分隔符、控制字符或非法版本格式。" >&2
-    echo "NEXT  使用合法版本，例如 APS_VERSION=1.2.2；或保持默认 latest。" >&2
+    echo "NEXT  使用合法版本，例如 APS_VERSION=1.3.0；或保持默认 latest。" >&2
     exit 2
   fi
 fi

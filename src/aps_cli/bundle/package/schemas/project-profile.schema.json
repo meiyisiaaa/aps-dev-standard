@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-project-standard.local/schemas/project-profile.schema.json",
+  "title": "APS Project Governance Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "risk_profile", "reviewed_at", "review_triggers", "workstreams"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": 1},
+    "risk_profile": {"enum": ["NORMAL", "LARGE", "REGULATED"]},
+    "reviewed_at": {"type": "string", "format": "date-time"},
+    "review_triggers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "workstreams": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "status"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^WS-[A-Z0-9][A-Z0-9_-]*$"},
+          "name": {"type": "string", "minLength": 1},
+          "status": {"enum": ["ACTIVE", "PAUSED", "COMPLETE"]},
+          "owner": {"type": ["string", "null"], "minLength": 1},
+          "scope": {"type": ["string", "null"], "minLength": 1},
+          "depends_on": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}

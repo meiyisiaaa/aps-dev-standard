@@ -28,7 +28,7 @@ function Test-SafeVersion {
 }
 
 if ($Version -ne "latest" -and -not (Test-SafeVersion $Version)) {
-    Fail-Install "APS_VERSION 不是安全版本组件：$Version" 2 "使用合法版本，例如 -Version 1.2.2；或保持默认 latest。"
+    Fail-Install "APS_VERSION 不是安全版本组件：$Version" 2 "使用合法版本，例如 -Version 1.3.0；或保持默认 latest。"
 }
 
 $python = Get-Command py -ErrorAction SilentlyContinue

@@ -1,0 +1,12 @@
+{
+  "$schema": ".ai/schemas/project-profile.schema.json",
+  "schema_version": 1,
+  "risk_profile": "NORMAL",
+  "reviewed_at": "2026-08-27T00:00:00+00:00",
+  "review_triggers": [
+    "scope or data sensitivity changes",
+    "release target or deployment topology changes",
+    "a major risk or compliance obligation is added"
+  ],
+  "workstreams": []
+}

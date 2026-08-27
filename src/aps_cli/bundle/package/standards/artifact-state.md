@@ -1,8 +1,8 @@
 # AI 项目 Artifact & State 标准（Project Artifact & State Standard）
 
-**Standard Version:** `1.2.2`<br>
+**Standard Version:** `1.3.0`<br>
 **Status:** `ACTIVE`  
-**Companion Lifecycle Standard:** `1.2.2`
+**Companion Lifecycle Standard:** `1.3.0`
 
 > 本标准约束 AI 在项目中创建、读取、更新、验证、同步、迁移和归档 Artifact 与项目状态。  
 > `.ai/standards/lifecycle.md`定义生命周期与执行 Contract；本标准定义项目状态如何持久化以及哪个 Source of Truth 具有权威性。
@@ -123,6 +123,10 @@ project/
 │   ├── state.yaml
 │   ├── decisions.md
 │   ├── registry.yaml
+│   ├── project-profile.json
+│   ├── release-readiness.json      # Stage 20 边界按需创建
+│   ├── audit/
+│   │   └── transitions.jsonl       # 所有项目必需；高风险项目要求更完整
 │   ├── runtime/
 │   │   └── hosts/       # 每个 Agent Host 独立 Adapter / Capability State
 │   ├── cycles/
@@ -154,6 +158,8 @@ project/
 ↓
 验证目录和 schema
 ```
+
+Bootstrap 还必须让用户确认项目风险级别并写入 `.ai/project-profile.json`。所有项目都维护最小 Transition 审计；`NORMAL` 适用于普通项目，`LARGE` 必须列出模块 / 工作流，`REGULATED` 还必须保留合规、审批和审计留存证据。风险级别不增加 Stage，只改变 Evidence 和 Release readiness 的最低要求。
 
 固定 Registry：`.ai/registry.yaml`。不得把 Registry 随意散落到 Stage 文档或 Bootstrap 文档中。
 
@@ -463,7 +469,7 @@ Reference UI 确认
 
 ```yaml
 schema_version: 1
-standard_version: "1.2.2"
+standard_version: "1.3.0"
 revision: 1
 
 cycle: CYCLE-001
@@ -488,7 +494,7 @@ updated_by: coordinator
 
 ```text
 只保存当前状态，不复制 Decision / Requirement / Research 正文
-历史由 Git、Change Log、Decision Log、Cycle Artifact 保存
+历史由 Git、Change Log、Decision Log、Cycle Artifact 保存；所有项目另外由 `.ai/audit/transitions.jsonl` 保存结构化 Stage / Gate 流转记录
 revision 每次治理写入必须 +1
 stage_status 只允许 ACTIVE / BLOCKED / COMPLETE
 GATED Stage 的 gate_status 只允许 PENDING / PASS / REVISE / HOLD / STOP
@@ -509,6 +515,26 @@ Release / Cycle Review
 ```
 
 全局状态写入遵守 Multi-Agent Single Writer 与 compare-before-write 规则。
+
+## 5.1 Transition Audit
+
+`.ai/state.yaml` 只保存当前快照，不能单独证明“从哪个 Stage / Gate 进入当前状态”。所有项目 MUST 使用 `.ai/audit/transitions.jsonl`，每行一个 JSON Transition Record，并保持只追加：
+
+```json
+{
+  "schema_version": 1,
+  "event_id": "TRN-002",
+  "recorded_at": "2026-08-27T00:00:00+00:00",
+  "revision": 2,
+  "actor": "coordinator",
+  "reason": "Stage 01 Gate PASS; enter Stage 02",
+  "from_state": {"cycle": "CYCLE-001", "stage": 1, "stage_type": "GATED", "stage_status": "COMPLETE", "gate_status": "PASS"},
+  "to_state": {"cycle": "CYCLE-001", "stage": 2, "stage_type": "GATED", "stage_status": "ACTIVE", "gate_status": "PENDING"},
+  "evidence_refs": [".ai/cycles/CYCLE-001/stages/01-idea/01_IDEA.md"]
+}
+```
+
+每次 Stage / Gate / Cycle 变更都必须追加记录；Stage 变更离开 GATED Stage 前必须有 `COMPLETE + PASS`。APS 会拒绝格式错误、链断裂或最后状态与 `state.yaml` 不一致的审计链。审计记录不能替代 Stage Artifact、Decision Log、Git 或用户 Gate 确认。
 
 # 6. 阶段 Artifact 布局与自动创建
 
@@ -1228,6 +1254,20 @@ Design System Agent Skill 引用了不存在或过期的设计来源
 
 ---
 
+## 17.1 Release Readiness
+
+进入 Stage 20 的 Release 边界时，按 `.ai/project-profile.json` 的风险级别创建 `.ai/release-readiness.json`。它是机器可校验的检查索引，不替代 `20_RELEASE_CHECKLIST.md`、Release Notes 或用户 Gate。
+
+最低检查集合：
+
+```text
+NORMAL    lint / build / functional_qa / rollback
+LARGE     NORMAL + typecheck / unit / integration / e2e / performance / migration / security / monitoring / disaster_recovery / on_call / external_acceptance
+REGULATED LARGE + privacy_compliance / traceability / security_approval / audit_retention
+```
+
+每个检查必须有 `status: PASS` 和至少一个 `evidence_refs`；`LARGE` / `REGULATED` 的 READY 记录还必须有 reviewed_at、approved_by，并引用已定义的 workstream。Stage 20 Gate 仍由用户确认；检查 PASS 不自动通过 Gate。
+
 # 18. `.ai/registry.yaml` — Source / Dependency / Context Registry
 
 ## 18.1 原则
@@ -1252,6 +1292,9 @@ Critical Skill → Host / Discovery / Version / Last Verified
 | Artifact Standard | 项目配置的标准路径 | bootstrap/on-demand |
 | Project State | `.ai/state.yaml` | always-minimal |
 | Decisions | `.ai/decisions.md` | referenced-only |
+| Project Governance Profile | `.ai/project-profile.json` | always-minimal |
+| Transition Audit | `.ai/audit/transitions.jsonl`（所有项目） | stage/on-demand |
+| Release Readiness | `.ai/release-readiness.json` | release-only |
 | Requirements | 当前有效的 Stage 08 Requirements Artifact（可继承自前一 Cycle） | stage/task |
 | Visual DNA | 当前有效的 Stage 10 Visual DNA Artifact（可继承自前一 Cycle） | ui-task |
 | Design Rules | 当前有效的 Stage 10 Design System Artifact（可继承自前一 Cycle） | ui-task |

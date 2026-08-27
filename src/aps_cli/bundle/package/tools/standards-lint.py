@@ -103,6 +103,7 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
         "## 0.7 Context Loading & Budget",
         "## 0.13 Gate State Machine",
         "### 0.3.1 Stage Entry / Host Plan Mode",
+        "### 0.3.2 Project Risk Profile / Workstream",
         "# 31. Agent Runtime Standard",
         "## 32.4 Skill Security Contract",
         "# 35. Multi-Agent Concurrency & Governance",
@@ -167,6 +168,7 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
         "# 24. Multi-Agent Write Governance",
         "# 25. Evidence / Binary Retention",
         "# 26. Context Hygiene",
+        "## 17.1 Release Readiness",
     ]
     for s in required_art_sections:
         if s in art:
@@ -183,6 +185,10 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
         report.pass_("bootstrap includes governance concurrency controls")
     else:
         report.error("bootstrap missing concurrency controls")
+    if ".ai/project-profile.json" in boot and ".ai/audit/transitions.jsonl" in boot and ".ai/release-readiness.json" in boot:
+        report.pass_("bootstrap includes risk, transition audit, and release readiness paths")
+    else:
+        report.error("bootstrap is missing risk or release governance paths")
 
     if "Research Brief" in life and "当前对话" in life and "禁止只写文档后静默完成" in boot:
         report.pass_("research results require conversational delivery")
@@ -300,6 +306,112 @@ def scan_skills(root: Path, cwd: Path) -> dict[str, list[tuple[str, Path]]]:
     return out
 
 
+PROFILE_RELEASE_CHECKS = {
+    "NORMAL": {"lint", "build", "functional_qa", "rollback"},
+    "LARGE": {"lint", "typecheck", "unit", "integration", "e2e", "performance", "migration", "security", "functional_qa", "monitoring", "rollback", "disaster_recovery", "on_call", "external_acceptance"},
+    "REGULATED": {"lint", "typecheck", "unit", "integration", "e2e", "performance", "migration", "security", "privacy_compliance", "traceability", "security_approval", "functional_qa", "monitoring", "rollback", "audit_retention", "disaster_recovery", "on_call", "external_acceptance"},
+}
+
+
+def validate_project_governance(root: Path, state: dict, report: Report) -> None:
+    profile_path = root / ".ai" / "project-profile.json"
+    if not profile_path.is_file():
+        report.error("missing project governance profile: .ai/project-profile.json")
+        return
+    try:
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        if not isinstance(profile, dict):
+            raise ValueError("profile must be a JSON object")
+        risk = profile.get("risk_profile")
+        if risk not in PROFILE_RELEASE_CHECKS:
+            raise ValueError(f"invalid risk_profile: {risk}")
+        if profile.get("schema_version") != 1:
+            raise ValueError("profile schema_version must be 1")
+        if not isinstance(profile.get("reviewed_at"), str) or not profile["reviewed_at"].strip():
+            raise ValueError("profile reviewed_at must be non-empty")
+        if not isinstance(profile.get("review_triggers"), list) or not profile["review_triggers"]:
+            raise ValueError("profile review_triggers must be a non-empty list")
+        workstreams = profile.get("workstreams")
+        if not isinstance(workstreams, list):
+            raise ValueError("profile workstreams must be a list")
+        ids = []
+        for item in workstreams:
+            if not isinstance(item, dict) or not re.fullmatch(r"WS-[A-Z0-9][A-Z0-9_-]*", str(item.get("id", ""))):
+                raise ValueError("profile contains an invalid workstream id")
+            ids.append(item["id"])
+        if len(ids) != len(set(ids)):
+            raise ValueError("profile contains duplicate workstream ids")
+        if risk in {"LARGE", "REGULATED"} and not workstreams:
+            raise ValueError(f"{risk} profile requires at least one workstream")
+        report.pass_(f"project governance profile is valid: {risk}")
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        report.error(f"invalid project governance profile: {exc}")
+        return
+
+    audit_path = root / ".ai" / "audit" / "transitions.jsonl"
+    if not audit_path.is_file():
+        report.error("missing required transition audit log: .ai/audit/transitions.jsonl")
+    elif audit_path.is_file():
+        try:
+            records = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            if not records:
+                raise ValueError("transition audit log is empty")
+            last = records[-1]
+            if not isinstance(last, dict) or not isinstance(last.get("to_state"), dict):
+                raise ValueError("last transition has no to_state")
+            expected = {key: state.get(key) for key in ("cycle", "stage", "stage_type", "stage_status", "gate_status")}
+            if isinstance(expected["stage"], str) and expected["stage"].isdigit():
+                expected["stage"] = int(expected["stage"])
+            if expected["gate_status"] in {"null", "None", ""}:
+                expected["gate_status"] = None
+            actual = {key: last["to_state"].get(key) for key in expected}
+            if expected != actual:
+                raise ValueError("last transition does not match state.yaml")
+            report.pass_("transition audit log ends at the current state")
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError) as exc:
+            report.error(f"invalid transition audit log: {exc}")
+
+    stage = state.get("stage")
+    gate = state.get("gate_status")
+    if isinstance(stage, int) and (stage >= 21 or (stage == 20 and gate == "PASS")):
+        readiness_path = root / ".ai" / "release-readiness.json"
+        if not readiness_path.is_file():
+            report.error("missing release readiness at release boundary: .ai/release-readiness.json")
+        else:
+            try:
+                readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+                checks = readiness.get("checks", {}) if isinstance(readiness, dict) else {}
+                missing = sorted(check for check in PROFILE_RELEASE_CHECKS[risk] if not isinstance(checks.get(check), dict) or checks[check].get("status") != "PASS")
+                if readiness.get("profile") != risk or readiness.get("status") not in {"READY", "RELEASED"}:
+                    report.error("release readiness profile/status is not ready")
+                elif missing:
+                    report.error(f"release readiness missing PASS checks: {missing}")
+                else:
+                    report.pass_("release readiness satisfies the risk profile")
+            except (OSError, UnicodeError, json.JSONDecodeError, AttributeError) as exc:
+                report.error(f"invalid release readiness: {exc}")
+
+    cycle = state.get("cycle")
+    if cycle:
+        stages_root = root / ".ai" / "cycles" / str(cycle) / "stages"
+        if stages_root.is_dir():
+            for snapshot_path in stages_root.rglob("08_PRD_SNAPSHOT.md"):
+                try:
+                    snapshot_text = snapshot_path.read_text(encoding="utf-8")
+                except (OSError, UnicodeError) as exc:
+                    report.error(f"cannot read PRD Snapshot {snapshot_path.relative_to(root)}: {exc}")
+                    continue
+                active = re.search(r"(?mi)^\s*-\s*Current Status\s*[：:]\s*ACTIVE\s*$", snapshot_text)
+                if not active:
+                    continue
+                revision = re.search(r"(?mi)^\s*-\s*Source State Revision\s*[：:]\s*(\d+)\s*$", snapshot_text)
+                current_revision = state.get("revision")
+                if not revision:
+                    report.error(f"active PRD Snapshot lacks Source State Revision: {snapshot_path.relative_to(root)}")
+                elif str(current_revision).isdigit() and int(revision.group(1)) != int(current_revision):
+                    report.error(f"active PRD Snapshot is stale: {snapshot_path.relative_to(root)}")
+
+
 def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -> None:
     root = project_root.expanduser().resolve()
     required_files = [
@@ -310,7 +422,13 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
         root / ".ai" / "schemas" / "state.schema.json",
         root / ".ai" / "schemas" / "registry.schema.json",
         root / ".ai" / "schemas" / "decision-request.schema.json",
+        root / ".ai" / "schemas" / "project-profile.schema.json",
+        root / ".ai" / "schemas" / "transition-record.schema.json",
+        root / ".ai" / "schemas" / "release-readiness.schema.json",
         root / ".ai" / "templates" / "decision-request.json",
+        root / ".ai" / "templates" / "project-profile.json",
+        root / ".ai" / "templates" / "transition-record.json",
+        root / ".ai" / "templates" / "release-readiness.json",
     ]
     for p in required_files:
         if p.exists():
@@ -322,6 +440,9 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
         root / ".ai" / "schemas" / "state.schema.json",
         root / ".ai" / "schemas" / "registry.schema.json",
         root / ".ai" / "schemas" / "decision-request.schema.json",
+        root / ".ai" / "schemas" / "project-profile.schema.json",
+        root / ".ai" / "schemas" / "transition-record.schema.json",
+        root / ".ai" / "schemas" / "release-readiness.schema.json",
     ]:
         if not p.is_file():
             continue
@@ -380,6 +501,8 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
                     report.error(f"GATED stage has invalid gate_status: {gate_raw}")
             elif gate_raw not in (None, "", "null"):
                 report.error(f"non-GATED stage must have gate_status=null, got: {gate_raw}")
+            if not missing and stage_status in {"ACTIVE", "BLOCKED", "COMPLETE"} and stage_type in EXPECTED_STAGE_TYPES:
+                validate_project_governance(root, data, report)
         except Exception as exc:
             report.error(f"cannot parse state.yaml: {exc}")
 

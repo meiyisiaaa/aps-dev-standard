@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-project-standard.local/schemas/release-readiness.schema.json",
+  "title": "APS Release Readiness",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "release_id", "profile", "status", "target_environment", "checks", "workstream_refs", "reviewed_at", "approved_by"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": 1},
+    "release_id": {"type": "string", "pattern": "^REL-[A-Z0-9][A-Z0-9_-]*$"},
+    "profile": {"enum": ["NORMAL", "LARGE", "REGULATED"]},
+    "status": {"enum": ["DRAFT", "READY", "RELEASED", "BLOCKED"]},
+    "target_environment": {"type": "string", "minLength": 1},
+    "checks": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "evidence_refs"],
+        "properties": {
+          "status": {"enum": ["PASS", "FAIL", "PENDING", "SKIPPED"]},
+          "evidence_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "note": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "workstream_refs": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "reviewed_at": {"type": ["string", "null"], "format": "date-time"},
+    "approved_by": {"type": ["string", "null"], "minLength": 1}
+  }
+}

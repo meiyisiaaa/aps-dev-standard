@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "event_id": "TRN-001",
+  "recorded_at": "2026-08-27T00:00:00+00:00",
+  "revision": 1,
+  "actor": "coordinator",
+  "reason": "Bootstrap baseline",
+  "from_state": null,
+  "to_state": {
+    "cycle": "CYCLE-001",
+    "stage": 1,
+    "stage_type": "GATED",
+    "stage_status": "ACTIVE",
+    "gate_status": "PENDING"
+  },
+  "evidence_refs": [".ai/state.yaml"]
+}

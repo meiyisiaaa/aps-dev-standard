@@ -10,6 +10,7 @@
 - Outputs：本页的可读产品汇总和 Source Map。
 - Acceptance Criteria：关键结论都有可解析的来源引用；未确定项和阻塞项没有被写成已确认事实。
 - Current Status：DRAFT / ACTIVE / SUPERSEDED
+- Source State Revision：填写生成本 Snapshot 时 `.ai/state.yaml` 的 revision；状态变化后必须更新
 - Blocking Decisions：`DEC-XXX` 或 `None`
 - Next Stage：`Stage 09 UX` / `Stage 10 UI` / `Stage 12 Validation` / 按当前 Transition Contract 填写
 

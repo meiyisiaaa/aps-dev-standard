@@ -137,6 +137,74 @@ def snapshot_files(root: Path) -> dict[str, bytes]:
     }
 
 
+def write_transition_audit(project: Path) -> None:
+    """Write a valid fixture chain ending at the project's current state."""
+    state_text = (project / ".ai" / "state.yaml").read_text(encoding="utf-8")
+
+    def state_value(name: str) -> str:
+        match = re.search(rf"(?m)^{re.escape(name)}:\s*(.+)$", state_text)
+        if not match:
+            raise SystemExit(f"fixture state is missing {name}")
+        return match.group(1).strip()
+
+    cycle = state_value("cycle")
+    stage = int(state_value("stage"))
+    stage_type = state_value("stage_type")
+    stage_status = state_value("stage_status")
+    gate_status = state_value("gate_status")
+    gate_status = None if gate_status == "null" else gate_status
+    revision = int(state_value("revision"))
+    current = {
+        "cycle": cycle,
+        "stage": stage,
+        "stage_type": stage_type,
+        "stage_status": stage_status,
+        "gate_status": gate_status,
+    }
+    template = json.loads(
+        (project / ".ai" / "templates" / "transition-record.json").read_text(encoding="utf-8")
+    )
+
+    def record(event_id: str, number: int, from_state: dict | None, to_state: dict) -> dict:
+        value = dict(template)
+        value.update(
+            {
+                "event_id": event_id,
+                "recorded_at": f"2026-08-27T00:00:0{number}+00:00",
+                "revision": number,
+                "from_state": from_state,
+                "to_state": to_state,
+            }
+        )
+        return value
+
+    initial = {
+        "cycle": cycle,
+        "stage": 1,
+        "stage_type": "GATED",
+        "stage_status": "ACTIVE",
+        "gate_status": "PENDING",
+    }
+    if stage == 1:
+        records = [record("TRN-TEST-001", 1, None, current)]
+    else:
+        complete = {**initial, "stage_status": "COMPLETE", "gate_status": "PASS"}
+        records = [
+            record("TRN-TEST-001", 1, None, initial),
+            record("TRN-TEST-002", 2, initial, complete),
+            record("TRN-TEST-003", 3, complete, current),
+        ]
+        if revision < 3:
+            raise SystemExit("fixture state revision must be at least 3 for a non-Stage-1 audit chain")
+
+    audit = project / ".ai" / "audit" / "transitions.jsonl"
+    audit.parent.mkdir(parents=True, exist_ok=True)
+    audit.write_text(
+        "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in records),
+        encoding="utf-8",
+    )
+
+
 def safe_extract_zip(archive: Path, destination: Path) -> None:
     """Test the same archive boundary expected from the online installers."""
     seen: set[str] = set()
@@ -221,6 +289,16 @@ def main() -> int:
         if snapshot_files(adopted) != adopted_after:
             raise SystemExit("repeated resume changed an adopted project")
 
+        legacy = temp / "legacy-governed-project"
+        run_python("aps.py", "init", str(legacy), "--host", "generic", "--no-launch", "--no-git")
+        (legacy / ".ai" / "state.yaml").write_text(
+            (legacy / ".ai" / "templates" / "state.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        legacy_resume = run_python_capture("aps.py", "resume", str(legacy), "--host", "codex")
+        if "尚未完成风险基线" not in legacy_resume or "will not auto-launch" not in legacy_resume:
+            raise SystemExit("legacy governed project did not enter safe governance bootstrap")
+
         ordinary = temp / "ordinary-project"
         ordinary.mkdir()
         (ordinary / "app.txt").write_text("ordinary project\n", encoding="utf-8")
@@ -248,7 +326,7 @@ def main() -> int:
 
         manifest = project / ".ai" / "standard-manifest.json"
         manifest_before = manifest.read_bytes()
-        manifest.write_text(manifest.read_text(encoding="utf-8").replace('"version": "1.2.2"', '"version": "0.0.0"'), encoding="utf-8")
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace('"version": "1.3.0"', '"version": "0.0.0"'), encoding="utf-8")
         mismatch_output = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
         if "REFUSE" not in mismatch_output or "aps upgrade" not in mismatch_output:
             raise SystemExit("version mismatch resume did not provide recovery guidance")
@@ -285,6 +363,9 @@ def main() -> int:
         run_python_expect_failure("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
         state = project / ".ai" / "state.yaml"
         state.write_text((project / ".ai" / "templates" / "state.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+        profile = project / ".ai" / "project-profile.json"
+        profile.write_text((project / ".ai" / "templates" / "project-profile.json").read_text(encoding="utf-8"), encoding="utf-8")
+        write_transition_audit(project)
         before_menu_cancel = snapshot_files(project)
         menu_output = run_python_with_input("3\nn\n", str(ROOT / "aps.py"), cwd=project)
         if "已取消 rebaseline" not in menu_output or snapshot_files(project) != before_menu_cancel:
@@ -334,26 +415,90 @@ def main() -> int:
             raise SystemExit("non-file state path did not use the safe recovery path")
         state.rmdir()
         state.write_text(normal_state, encoding="utf-8")
-        state.write_text(normal_state.replace("stage: 1", "stage: 17").replace("stage_type: GATED", "stage_type: EXECUTION_LOOP").replace("gate_status: PENDING", "gate_status: null"), encoding="utf-8")
+        state.write_text(normal_state.replace("revision: 1", "revision: 3").replace("stage: 1", "stage: 17").replace("stage_type: GATED", "stage_type: EXECUTION_LOOP").replace("gate_status: PENDING", "gate_status: null"), encoding="utf-8")
+        write_transition_audit(project)
         normal_status = run_python_capture("aps.py", "status", str(project))
         if "Mode gate: NORMAL (Plan mode not required)" not in normal_status:
             raise SystemExit("status incorrectly required Plan mode for an execution Stage")
-        state.write_text(normal_state.replace("stage: 1", "stage: 22").replace("stage_type: GATED", "stage_type: ROUTER").replace("gate_status: PENDING", "gate_status: null").replace("active_change_refs: []", "active_change_refs: [CHANGE-001]"), encoding="utf-8")
+        normal_readiness = json.loads((project / ".ai" / "templates" / "release-readiness.json").read_text(encoding="utf-8"))
+        normal_readiness.update({"profile": "NORMAL", "status": "READY", "target_environment": "staging", "checks": {name: {"status": "PASS", "evidence_refs": [f"TEST-{name.upper()}"]} for name in ("lint", "build", "functional_qa", "rollback")}, "reviewed_at": "2026-08-27T00:00:04+00:00"})
+        (project / ".ai" / "release-readiness.json").write_text(json.dumps(normal_readiness, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        state.write_text(normal_state.replace("revision: 1", "revision: 3").replace("stage: 1", "stage: 22").replace("stage_type: GATED", "stage_type: ROUTER").replace("gate_status: PENDING", "gate_status: null").replace("active_change_refs: []", "active_change_refs: [CHANGE-001]"), encoding="utf-8")
+        write_transition_audit(project)
         change_status = run_python_capture("aps.py", "status", str(project))
         if "Mode gate: PLAN (required on Stage entry)" not in change_status:
             raise SystemExit("status did not require Plan mode for an active Stage 22 change")
         state.write_text(normal_state, encoding="utf-8")
+        profile_bytes = profile.read_bytes()
+        audit = project / ".ai" / "audit" / "transitions.jsonl"
+        if audit.exists():
+            audit.unlink()
+        profile_data = json.loads(profile_bytes)
+        profile_data["risk_profile"] = "LARGE"
+        profile_data["workstreams"] = [{"id": "WS-CORE", "name": "核心工作流", "status": "ACTIVE", "owner": "team", "depends_on": []}]
+        profile.write_text(json.dumps(profile_data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        missing_audit = run_python_expect_failure_capture("aps.py", "status", str(project))
+        if "Transition" not in missing_audit or "transitions.jsonl" not in missing_audit:
+            raise SystemExit("large profile did not require transition audit")
+        transition = json.loads((project / ".ai" / "templates" / "transition-record.json").read_text(encoding="utf-8"))
+        transition["recorded_at"] = "2026-08-27T00:00:01+00:00"
+        audit.parent.mkdir(parents=True, exist_ok=True)
+        audit.write_text(json.dumps(transition, ensure_ascii=False) + "\n", encoding="utf-8")
+        run_python("aps.py", "status", str(project))
+        audit.write_text(json.dumps({**transition, "evidence_refs": []}, ensure_ascii=False) + "\n", encoding="utf-8")
+        missing_evidence = run_python_expect_failure_capture("aps.py", "status", str(project))
+        if "evidence_refs" not in missing_evidence:
+            raise SystemExit("transition without evidence was accepted")
+        audit.write_text(json.dumps(transition, ensure_ascii=False) + "\n", encoding="utf-8")
+        complete_state = {**transition["to_state"], "stage_status": "COMPLETE", "gate_status": "PASS"}
+        broken_last = {
+            **transition,
+            "event_id": "TRN-BROKEN-003",
+            "recorded_at": "2026-08-27T00:00:03+00:00",
+            "revision": 3,
+            "from_state": complete_state,
+            "to_state": {**complete_state, "stage": 2, "stage_status": "ACTIVE", "gate_status": "PENDING"},
+        }
+        complete_record = {
+            **transition,
+            "event_id": "TRN-BROKEN-002",
+            "recorded_at": "2026-08-27T00:00:02+00:00",
+            "revision": 2,
+            "from_state": transition["to_state"],
+            "to_state": complete_state,
+        }
+        audit.write_text(
+            "\n".join(json.dumps(item, ensure_ascii=False) for item in (transition, complete_record, broken_last)) + "\n",
+            encoding="utf-8",
+        )
+        broken_audit = run_python_expect_failure_capture("aps.py", "status", str(project))
+        if "最后状态" not in broken_audit or "transitions.jsonl" not in broken_audit:
+            raise SystemExit("transition audit mismatch was not rejected")
+        non_initial = {
+            **transition,
+            "event_id": "TRN-NONINITIAL-001",
+            "from_state": complete_state,
+            "to_state": {**complete_state, "stage": 2, "stage_status": "ACTIVE", "gate_status": "PENDING"},
+        }
+        audit.write_text(json.dumps(non_initial, ensure_ascii=False) + "\n", encoding="utf-8")
+        non_initial_output = run_python_expect_failure_capture("aps.py", "status", str(project))
+        if "第一条记录必须从空状态开始" not in non_initial_output:
+            raise SystemExit("non-initial transition audit chain was accepted")
+        profile.write_bytes(profile_bytes)
+        write_transition_audit(project)
         codex_handoff = run_python_capture("aps.py", "init", str(temp / "codex-mode-project"), "--host", "codex", "--no-git")
         if "Plan mode is required" not in codex_handoff or "will not auto-launch" not in codex_handoff:
             raise SystemExit("Codex handoff did not block a normal session for a Plan-required Stage")
         cycle_two_complete_wrong_stage = (
-            normal_state.replace("cycle: CYCLE-001", "cycle: CYCLE-002")
+            normal_state.replace("revision: 1", "revision: 3")
+            .replace("cycle: CYCLE-001", "cycle: CYCLE-002")
             .replace("stage: 1", "stage: 22")
             .replace("stage_type: GATED", "stage_type: ROUTER")
             .replace("stage_status: ACTIVE", "stage_status: COMPLETE")
             .replace("gate_status: PENDING", "gate_status: null")
         )
         state.write_text(cycle_two_complete_wrong_stage, encoding="utf-8")
+        write_transition_audit(project)
         (project / ".ai" / "registry.yaml").write_text(
             (project / ".ai" / "templates" / "registry.yaml").read_text(encoding="utf-8"),
             encoding="utf-8",
@@ -362,6 +507,7 @@ def main() -> int:
         if "Stage 23" not in wrong_stage_rebaseline:
             raise SystemExit("rebaseline accepted a completed non-Stage-23 cycle")
         state.write_text(normal_state.replace("cycle: CYCLE-001", "cycle: CYCLE-002"), encoding="utf-8")
+        write_transition_audit(project)
 
         decision_dir = project / ".ai" / "cycles" / "CYCLE-002" / "stages" / "01-idea" / "decision-requests"
         decision_dir.mkdir(parents=True)
@@ -569,7 +715,44 @@ def main() -> int:
         missing_output = run_python_expect_failure_capture("aps.py", "research", "brief", str(missing_research), str(project))
         if "Research Brief is missing" not in missing_output or "研究摘要缺少字段" not in missing_output:
             raise SystemExit("missing Research Brief fields did not provide repair guidance")
+        snapshot_dir = project / ".ai" / "cycles" / "CYCLE-002" / "stages" / "08-requirements"
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        current_revision = int(re.search(r"(?m)^revision:\s*(\d+)", state.read_text(encoding="utf-8")).group(1))
+        snapshot = snapshot_dir / "08_PRD_SNAPSHOT.md"
+        snapshot.write_text(f"# PRD Snapshot\n\n- Current Status：ACTIVE\n- Source State Revision：{current_revision}\n", encoding="utf-8")
+        run_python("aps.py", "status", str(project))
+        snapshot.write_text(snapshot.read_text(encoding="utf-8").replace(f"Source State Revision：{current_revision}", "Source State Revision：1"), encoding="utf-8")
+        stale_snapshot = run_python_expect_failure_capture("aps.py", "status", str(project))
+        if "PRD Snapshot" not in stale_snapshot or "Source State Revision" not in stale_snapshot:
+            raise SystemExit("stale PRD Snapshot was not rejected")
+        snapshot.unlink()
         run_python("aps.py", "doctor", str(project), "--host", "generic")
+
+        release_governance = temp / "release-governance-project"
+        run_python("aps.py", "init", str(release_governance), "--host", "generic", "--no-launch", "--no-git")
+        release_state = release_governance / ".ai" / "state.yaml"
+        release_state_text = (release_governance / ".ai" / "templates" / "state.yaml").read_text(encoding="utf-8")
+        release_state_text = release_state_text.replace("revision: 1", "revision: 3").replace("stage: 1", "stage: 21").replace("stage_type: GATED", "stage_type: OBSERVATION_LOOP").replace("gate_status: PENDING", "gate_status: null")
+        release_state.write_text(release_state_text, encoding="utf-8")
+        write_transition_audit(release_governance)
+        for runtime_file in ("decisions.md", "registry.yaml"):
+            (release_governance / ".ai" / runtime_file).write_text(
+                (release_governance / ".ai" / "templates" / runtime_file).read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+        release_profile = release_governance / ".ai" / "project-profile.json"
+        release_profile_data = json.loads((release_governance / ".ai" / "templates" / "project-profile.json").read_text(encoding="utf-8"))
+        release_profile_data["risk_profile"] = "REGULATED"
+        release_profile_data["workstreams"] = [{"id": "WS-CORE", "name": "核心工作流", "status": "ACTIVE", "owner": "compliance-team", "depends_on": []}]
+        release_profile.write_text(json.dumps(release_profile_data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        missing_readiness = run_python_expect_failure_capture("aps.py", "status", str(release_governance))
+        if "Release readiness" not in missing_readiness or "release-readiness.json" not in missing_readiness:
+            raise SystemExit("release boundary did not require readiness evidence")
+        checks = {name: {"status": "PASS", "evidence_refs": [f"TEST-{name.upper()}"]} for name in ("lint", "typecheck", "unit", "integration", "e2e", "performance", "migration", "security", "privacy_compliance", "traceability", "security_approval", "functional_qa", "monitoring", "rollback", "audit_retention", "disaster_recovery", "on_call", "external_acceptance")}
+        readiness = json.loads((release_governance / ".ai" / "templates" / "release-readiness.json").read_text(encoding="utf-8"))
+        readiness.update({"release_id": "REL-001", "profile": "REGULATED", "status": "READY", "target_environment": "production", "checks": checks, "workstream_refs": ["WS-CORE"], "reviewed_at": "2026-08-27T00:00:03+00:00", "approved_by": "release-owner"})
+        (release_governance / ".ai" / "release-readiness.json").write_text(json.dumps(readiness, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        run_python("aps.py", "doctor", str(release_governance), "--host", "generic")
 
         before_upgrade = snapshot_files(project)
         run_python("aps.py", "upgrade", str(project), "--host", "generic")
@@ -657,7 +840,7 @@ def main() -> int:
         shutil.copytree(ROOT / "src" / "aps_cli" / "bundle", unsafe_bundle)
         unsafe_manifest_path = unsafe_bundle / "package-manifest.json"
         unsafe_manifest = json.loads(unsafe_manifest_path.read_text(encoding="utf-8"))
-        unsafe_manifest["version"] = "../1.2.2"
+        unsafe_manifest["version"] = "../1.3.0"
         unsafe_manifest_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
         try:
             installer_module.validate_bundle(unsafe_bundle)
@@ -800,6 +983,11 @@ def main() -> int:
                 (monorepo_project / ".ai" / "templates" / runtime_file).read_text(encoding="utf-8"),
                 encoding="utf-8",
             )
+        (monorepo_project / ".ai" / "project-profile.json").write_text(
+            (monorepo_project / ".ai" / "templates" / "project-profile.json").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        write_transition_audit(monorepo_project)
         run_python("aps.py", "doctor", str(monorepo_project), "--host", "generic")
     print("APS smoke test passed")
     return 0
