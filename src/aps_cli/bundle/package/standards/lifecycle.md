@@ -1323,6 +1323,23 @@ Token 使用
 RTL
 ```
 
+### 8.9 PRD 汇总视图（可选）
+
+APS 不增加独立的 PRD Stage。PRD 是对 Stage 05–09 当前有效结论的派生汇总，用于让用户、Agent 和非 APS 参与者快速理解产品契约；它不是第二个 Requirements Source，也不新增 Gate。
+
+需要一页产品文档时，在 Stage 08 形成初版 PRD Snapshot，并使用稳定来源引用：
+
+```text
+问题 / 目标 / 非目标       → Stage 05 Opportunity、Stage 06 Product DNA
+MVP / Core Loop / 功能     → Stage 07 Function
+功能与非功能约束           → Stage 08 Requirements
+用户流程 / 状态 / 线框      → Stage 09 UX（完成后补充引用）
+决策与未确定项             → DEC-* / 当前 blocker
+验收与指标                 → Requirements / Validation / QA
+```
+
+PRD Snapshot 的每个关键结论 MUST 能回指一个当前有效 Artifact 或 `DEC-*`；来源变化时先做 Impact Analysis，再更新汇总。PRD Snapshot 缺失或过期时，不得替代 Requirements、UX、Architecture 或 Security 的验收，也不得单独推动 Stage Transition。
+
 ## 检查
 
 - [ ] 核心性能要求明确
@@ -1334,11 +1351,14 @@ RTL
 
 ## 产物
 
-`08_REQUIREMENTS.md`
+```text
+08_REQUIREMENTS.md
+可选：08_PRD_SNAPSHOT.md（仅引用 Stage 05–09 的当前有效 Artifact）
+```
 
 ## Gate
 
-如果某项约束会显著改变 UX、架构或成本，向用户提问。
+如果某项约束会显著改变 UX、架构或成本，向用户提问。若创建 PRD Snapshot，必须确认来源引用可解析；Stage 08 Gate 仍以 Requirements Artifact、验证和用户决策为准。
 
 ---
 

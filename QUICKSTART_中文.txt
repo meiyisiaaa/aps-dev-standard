@@ -58,6 +58,7 @@ aps doctor      项目体检
 aps status      查看状态
 aps upgrade     升级 Standard
 aps research brief <调研 Artifact>  输出 Research Brief
+PRD 汇总        不新增 PRD 阶段；按需从 .ai/templates/prd-snapshot.md 创建 Stage 08 派生视图
 
 需要重大产品、技术、UX 或 Scope 决策时：
 

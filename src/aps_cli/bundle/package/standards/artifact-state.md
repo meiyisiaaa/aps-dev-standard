@@ -550,6 +550,7 @@ Release / Cycle Review
 
 08 Requirements
 → 08-requirements/08_REQUIREMENTS.md
+→ 可选：08-requirements/08_PRD_SNAPSHOT.md（派生汇总，不是第二个 Requirements Source）
 
 09 UX
 → 09-ux/09_USER_FLOW.md
@@ -619,6 +620,21 @@ Release / Cycle Review
 Project Bootstrap 的运行资产（Token、UI primitives、Components、Patterns、Motion Presets、Skill）属于实际源码 / `.agents/skills`，不复制到 `.ai/cycles/`。其真实路径记录在 `.ai/registry.yaml`。
 
 没有内容时不创建空壳文件；只有真实进入 Stage 或产生有效证据时创建。
+
+## 6.1 PRD Snapshot
+
+PRD Snapshot 是 Stage 05–09 Artifact 的可选派生汇总，默认在 Stage 08 形成初版。它服务于快速阅读和跨角色交接，不改变现有 Stage、Gate 或 Source of Truth。
+
+规则：
+
+```text
+每个关键结论必须引用当前有效 Artifact 或 DEC-*。
+不得复制一份可独立修改的 Requirements / Decision 正文。
+来源变化时先执行 Impact Analysis，再更新 Snapshot。
+Snapshot 缺失或过期时，不得替代 Requirements、UX、Architecture 或 Security 验收。
+```
+
+推荐最小内容：问题 / 目标 / 非目标、目标用户与场景、MVP / Core Loop、功能与非功能约束、UX / 状态引用、验收与指标、未决事项、Source Map。
 
 # 7. 文档更新规则
 

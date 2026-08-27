@@ -35,6 +35,7 @@ Bootstrap 顺序：
 13. 全局治理写入遵守 Single Writer、revision 与 compare-before-write；子 Agent 不直接覆盖全局治理 Artifact。
 14. 只有满足当前 Transition / Gate 条件并完成 Validation 后才推进。
 15. 每个 Stage 在完成、阻塞、暂停或切换对话前，必须在当前对话输出一页 Stage User Brief，固定包含：目标、输入、已完成、未完成、用户决策、确认影响、验证结果。简报不等于阶段完成；Artifact Contract、验收条件和 Gate / Transition 仍必须单独满足。
+16. 用户需要 PRD 时，不创建新的 Stage；以 Stage 08 Requirements 为核心，按需使用 `.ai/templates/prd-snapshot.md` 生成派生汇总。每个关键结论引用当前有效 Artifact 或 `DEC-*`，PRD Snapshot 不替代 Requirements、UX、Architecture、Security 或 Gate。
 
 Market Research / Product Research 完成后，当前对话必须先直接回答原始研究问题，再分析关键证据，最后输出 Research Brief；多个问题必须逐项回答。Brief 至少说明范围、方法与来源、关键发现、结论 / 建议、未确定项和待决策项；完整报告仍要落盘到对应 Stage Artifact。CLI 可用时运行 `aps research brief <ARTIFACT>` 生成可直接展示的摘要，但不能替代直接回答和分析。禁止只写文档后静默完成。
 

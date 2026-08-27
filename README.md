@@ -128,6 +128,8 @@ Before ending, pausing, blocking, or handing off any Stage, output a one-page St
 
 研究路径：先在当前对话直接回答原始问题并分析关键证据，再把完整报告写入 Stage Artifact；使用 `aps research brief <ARTIFACT>` 展示摘要。Artifact 必须包含稳定的 `## Research Brief` 标识和六类必需字段，缺失时按 CLI 提示补齐。
 
+PRD 路径：APS 不增加独立 PRD Stage。Stage 08 `08_REQUIREMENTS.md` 仍是需求核心来源；需要单页产品视图时，可将 `.ai/templates/prd-snapshot.md` 复制到当前 Cycle 的 `08-requirements/08_PRD_SNAPSHOT.md`，并只引用 Stage 05–09 的有效 Artifact 与 `DEC-*`。它是可选派生汇总，不是第二个 Source of Truth，也不新增 Gate。
+
 High-impact Stage entry requires Codex Plan mode before workspace changes: Stage 01, 05, 06, 07, 08, 09, 10, 13, 14, 15, 16, and 20. Stage 22 requires it when an Active Change exists. After the plan is accepted, switch to normal mode for execution. If `aps` is asked to launch Codex for one of these entries, it deliberately does not start a normal session; open the project in Codex, select Plan mode, and send the printed handoff.
 
 ## Temporary use before repository configuration
