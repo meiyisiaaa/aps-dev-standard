@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import site
+import stat
 import sys
+import tempfile
 import uuid
 from pathlib import Path
+
+
+VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$")
 
 
 def default_prefix() -> Path:
@@ -28,20 +34,49 @@ def read_version(path: Path) -> str:
     for line in path.read_text(encoding="utf-8").splitlines():
         key, separator, value = line.partition("=")
         if separator and key.strip() == "APS_CLI" and value.strip():
-            return value.strip()
+            version = value.strip()
+            if not VERSION_RE.fullmatch(version):
+                raise RuntimeError(f"VERSION 版本不安全：{version}")
+            return version
     raise RuntimeError("VERSION 中没有 APS_CLI 版本")
 
 
+def is_reparse_point(path: Path) -> bool:
+    try:
+        if path.is_symlink():
+            return True
+        if os.name == "nt":
+            return bool(getattr(os.lstat(path), "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+    except FileNotFoundError:
+        return False
+    return False
+
+
+def assert_no_reparse(path: Path) -> None:
+    current = path
+    while True:
+        if is_reparse_point(current):
+            raise RuntimeError(f"安装路径不能包含符号链接或 Windows reparse point：{current}")
+        if current.parent == current:
+            return
+        current = current.parent
+
+
 def remove_path(path: Path) -> None:
-    if path.is_symlink() or path.is_file():
+    if is_reparse_point(path) or path.is_file():
         path.unlink()
     elif path.is_dir():
         shutil.rmtree(path)
 
 
 def promote_directory(staged: Path, target: Path) -> None:
+    assert_no_reparse(staged)
+    assert_no_reparse(target)
+    assert_no_reparse(target.parent)
     backup = target.parent / f".{target.name}.backup-{uuid.uuid4().hex}"
     had_target = target.exists() or target.is_symlink()
+    if had_target and not target.is_dir():
+        raise RuntimeError(f"安装目标不是目录：{target}")
     moved_target = False
     completed = False
     try:
@@ -61,6 +96,33 @@ def promote_directory(staged: Path, target: Path) -> None:
             remove_path(backup)
 
 
+def write_launcher_atomic(path: Path, content: str, mode: int | None = None) -> None:
+    assert_no_reparse(path)
+    if path.exists() and not path.is_file():
+        raise RuntimeError(f"启动器目标不是普通文件：{path}")
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            dir=path.parent,
+            prefix=f".{path.name}.tmp-",
+            suffix="",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if mode is not None:
+            temporary.chmod(mode)
+        os.replace(temporary, path)
+    finally:
+        if temporary and temporary.exists():
+            temporary.unlink()
+
+
 def _install() -> int:
     ap = argparse.ArgumentParser(description="无需 pip 安装 APS CLI")
     ap.add_argument("--prefix", type=Path, default=default_prefix(), help="安装前缀")
@@ -68,12 +130,18 @@ def _install() -> int:
 
     src_root = Path(__file__).resolve().parent
     version = read_version(src_root / "VERSION")
-    prefix = args.prefix.expanduser().resolve()
+    prefix = args.prefix.expanduser()
+    assert_no_reparse(prefix)
+    prefix = prefix.resolve()
     app_root = prefix / ("share" if os.name != "nt" else "share") / "aps-cli"
     version_root = app_root / version
     current_root = app_root / "current"
     bin_dir = prefix / ("Scripts" if os.name == "nt" else "bin")
 
+    assert_no_reparse(app_root)
+    assert_no_reparse(version_root)
+    assert_no_reparse(current_root)
+    assert_no_reparse(bin_dir)
     app_root.mkdir(parents=True, exist_ok=True)
     staged_version = app_root / f".{version}.staging-{uuid.uuid4().hex}"
     staged_current = app_root / f".current.staging-{uuid.uuid4().hex}"
@@ -96,17 +164,17 @@ def _install() -> int:
     python = Path(sys.executable).resolve()
     if os.name == "nt":
         launcher = bin_dir / "aps.cmd"
-        launcher.write_text(
+        write_launcher_atomic(
+            launcher,
             f'@echo off\r\n"{python}" "{current_root / "aps.py"}" %*\r\n',
-            encoding="utf-8",
         )
     else:
         launcher = bin_dir / "aps"
-        launcher.write_text(
+        write_launcher_atomic(
+            launcher,
             f'#!/bin/sh\nexec "{python}" "{current_root / "aps.py"}" "$@"\n',
-            encoding="utf-8",
+            mode=0o755,
         )
-        launcher.chmod(0o755)
 
     print(f"OK    APS CLI {version} 安装完成。")
     print(f"安装位置：{app_root}")

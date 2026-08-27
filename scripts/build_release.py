@@ -11,6 +11,9 @@ import zipfile
 from pathlib import Path
 
 
+VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$")
+
+
 def read_versions(root: Path) -> dict[str, str]:
     values = {}
     for line in (root / "VERSION").read_text(encoding="utf-8").splitlines():
@@ -19,6 +22,8 @@ def read_versions(root: Path) -> dict[str, str]:
             values[key.strip()] = value.strip()
     if not values.get("APS_CLI") or not values.get("AI_PROJECT_STANDARD"):
         raise SystemExit("VERSION must define APS_CLI and AI_PROJECT_STANDARD")
+    if any(not VERSION_RE.fullmatch(values[key]) for key in ("APS_CLI", "AI_PROJECT_STANDARD")):
+        raise SystemExit("VERSION contains an unsafe version")
     return values
 
 

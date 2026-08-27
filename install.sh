@@ -17,6 +17,21 @@ if [ -z "$PYTHON" ]; then
   fi
 fi
 
+if [ "$VERSION" != "latest" ]; then
+  if ! "$PYTHON" - "$VERSION" <<'PY'
+import re
+import sys
+if not re.fullmatch(r"v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?", sys.argv[1]):
+    raise SystemExit(1)
+PY
+  then
+    echo "FAIL  APS_VERSION 不是安全版本组件：$VERSION" >&2
+    echo "原因：版本不能包含路径分隔符、控制字符或非法版本格式。" >&2
+    echo "NEXT  使用合法版本，例如 APS_VERSION=1.2.2；或保持默认 latest。" >&2
+    exit 2
+  fi
+fi
+
 fail_install() {
   echo "FAIL  APS 安装失败：$1" >&2
   echo "原因：Release 校验、下载、解包或本地安装未完成。" >&2
@@ -87,6 +102,18 @@ case "${TAG:-}" in
   *) TAG="v$TAG" ;;
 esac
 
+if [ -n "${TAG:-}" ]; then
+  if ! "$PYTHON" - "$TAG" <<'PY'
+import re
+import sys
+if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?", sys.argv[1]):
+    raise SystemExit(1)
+PY
+  then
+    fail_install "Release tag 不是安全版本组件：$TAG"
+  fi
+fi
+
 DOWNLOADED=0
 if [ -n "${TAG:-}" ]; then
   URL="https://github.com/$REPO/releases/download/$TAG/APS_CLI_${TAG#v}.zip"
@@ -112,9 +139,41 @@ fi
 EXTRACT="$TMP/extract"
 mkdir -p "$EXTRACT"
 $PYTHON - "$ASSET" "$EXTRACT" <<'PY'
-import sys, zipfile
-with zipfile.ZipFile(sys.argv[1]) as z:
-    z.extractall(sys.argv[2])
+import stat
+import sys
+import zipfile
+import re
+from pathlib import Path, PurePosixPath
+
+asset, destination = map(Path, sys.argv[1:])
+seen = set()
+with zipfile.ZipFile(asset) as archive:
+    for info in archive.infolist():
+        name = info.filename.replace("\\", "/")
+        key = name.rstrip("/")
+        if not key or name.startswith("/") or PurePosixPath(key).is_absolute() or re.match(r"^[A-Za-z]:", key):
+            raise SystemExit(f"unsafe ZIP path: {name}")
+        if any(part in {"", ".", ".."} for part in key.split("/")):
+            raise SystemExit(f"unsafe ZIP path: {name}")
+        if any(ord(char) < 32 for char in name):
+            raise SystemExit(f"ZIP path contains control character: {name}")
+        folded = key.casefold()
+        if folded in seen:
+            raise SystemExit(f"duplicate ZIP path: {name}")
+        seen.add(folded)
+        if stat.S_IFMT((info.external_attr >> 16) & 0xFFFF) == stat.S_IFLNK:
+            raise SystemExit(f"ZIP link entry is not allowed: {name}")
+        target = destination.joinpath(*PurePosixPath(key).parts)
+        if name.endswith("/"):
+            target.mkdir(parents=True, exist_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(info) as source, target.open("wb") as output:
+                while True:
+                    chunk = source.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    output.write(chunk)
 PY
 
 INSTALLER="$($PYTHON - "$EXTRACT" <<'PY'

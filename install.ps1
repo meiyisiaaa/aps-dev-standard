@@ -8,17 +8,27 @@ $ErrorActionPreference = "Stop"
 function Fail-Install {
     param(
         [Parameter(Mandatory=$true)][string]$Message,
-        [int]$ExitCode = 1
+        [int]$ExitCode = 1,
+        [string]$Next = "检查网络、Python 和权限后重试；若使用源码包，必须显式设置 APS_ALLOW_MAIN_FALLBACK=1。"
     )
     [Console]::Error.WriteLine("FAIL  APS 安装失败：$Message")
     [Console]::Error.WriteLine("原因：Release 校验、下载、解包或本地安装未完成。")
-    [Console]::Error.WriteLine("NEXT  检查网络、Python 和权限后重试；若使用源码包，必须显式设置 APS_ALLOW_MAIN_FALLBACK=1。")
+    [Console]::Error.WriteLine("NEXT  $Next")
     exit $ExitCode
 }
 
 if (-not $Repo) { $Repo = "meiyisiaaa/aps-dev-standard" }
 if ($Repo -notmatch '^[^/]+/[^/]+$') {
     Fail-Install "安装器未配置。请传入 -Repo owner/repo，或先运行 scripts/configure_repository.py。" 2
+}
+
+function Test-SafeVersion {
+    param([Parameter(Mandatory=$true)][string]$Value)
+    return $Value -match '^v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$'
+}
+
+if ($Version -ne "latest" -and -not (Test-SafeVersion $Version)) {
+    Fail-Install "APS_VERSION 不是安全版本组件：$Version" 2 "使用合法版本，例如 -Version 1.2.2；或保持默认 latest。"
 }
 
 $python = Get-Command py -ErrorAction SilentlyContinue
@@ -46,6 +56,39 @@ function Test-ReleaseChecksum {
     }
 }
 
+function Test-SafeZip {
+    param([Parameter(Mandatory=$true)][string]$AssetPath)
+    Add-Type -AssemblyName System.IO.Compression
+    $zip = [IO.Compression.ZipFile]::OpenRead($AssetPath)
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    try {
+        foreach ($entry in $zip.Entries) {
+            $name = $entry.FullName.Replace('\', '/')
+            $key = $name.TrimEnd('/')
+            if (-not $key -or $key.StartsWith('/') -or $key -match '^[A-Za-z]:') {
+                throw "ZIP 包含绝对或空路径条目：$name"
+            }
+            if ($name.ToCharArray() | Where-Object { [char]::IsControl($_) }) {
+                throw "ZIP 包含控制字符路径：$name"
+            }
+            foreach ($part in $key.Split('/')) {
+                if (-not $part -or $part -eq '.' -or $part -eq '..') {
+                    throw "ZIP 包含不安全路径：$name"
+                }
+            }
+            if (-not $seen.Add($key)) {
+                throw "ZIP 包含重复或大小写碰撞条目：$name"
+            }
+            $unixType = (([uint32]$entry.ExternalAttributes -shr 16) -band 0xF000)
+            if ($unixType -eq 0xA000) {
+                throw "ZIP 包含链接条目：$name"
+            }
+        }
+    } finally {
+        $zip.Dispose()
+    }
+}
+
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("aps-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
@@ -60,6 +103,7 @@ try {
         } catch { $tag = "" }
     } else { $tag = $Version }
     if ($tag -and $tag -notmatch '^v') { $tag = "v$tag" }
+    if ($tag -and -not (Test-SafeVersion $tag)) { throw "Release tag 不是安全版本组件：$tag" }
 
     if ($tag) {
         $normalized = $tag.TrimStart("v")
@@ -85,6 +129,7 @@ try {
         Invoke-WebRequest -Headers @{"User-Agent"="aps-installer"} -Uri "https://github.com/$Repo/archive/refs/heads/main.zip" -OutFile $asset
     }
     $extract = Join-Path $tmp "extract"
+    Test-SafeZip -AssetPath $asset
     Expand-Archive -LiteralPath $asset -DestinationPath $extract -Force
     $installer = Get-ChildItem -Path $extract -Filter install_cli.py -Recurse | Sort-Object { $_.FullName.Split([IO.Path]::DirectorySeparatorChar).Count } | Select-Object -First 1
     if (-not $installer) { throw "下载包中找不到 install_cli.py。" }

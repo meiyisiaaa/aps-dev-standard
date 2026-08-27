@@ -8,11 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from .installer import atomic_write
+from .installer import assert_no_reparse, atomic_write
 
 
 DECISION_ID_RE = re.compile(r"^DEC-[A-Z0-9][A-Z0-9_-]*$")
 CYCLE_RE = re.compile(r"^CYCLE-[0-9]{3,}$")
+STANDARD_VERSION_RE = re.compile(r"^1\.(?:1|2)\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
 INPUT_TYPES = {
     "single_select",
     "multi_select",
@@ -41,6 +42,9 @@ STATE_ORDER = [
     "updated_at",
     "updated_by",
 ]
+STATE_STAGE_TYPES = {"GATED", "EXECUTION_LOOP", "OBSERVATION_LOOP", "ROUTER"}
+STATE_STAGE_STATUSES = {"ACTIVE", "BLOCKED", "COMPLETE"}
+STATE_GATE_STATUSES = {"PENDING", "PASS", "REVISE", "HOLD", "STOP"}
 
 
 class DecisionError(RuntimeError):
@@ -53,6 +57,18 @@ def _now() -> str:
 
 def _parse_scalar(raw: str) -> Any:
     value = raw.strip()
+    in_quote: str | None = None
+    for index, char in enumerate(value):
+        if char in {'"', "'"}:
+            if in_quote == char:
+                in_quote = None
+            elif in_quote is None:
+                in_quote = char
+        elif char == "#" and in_quote is None and (index == 0 or value[index - 1].isspace()):
+            value = value[:index].rstrip()
+            break
+    if not value:
+        return None
     if value.startswith("#"):
         return None
     if value in {"null", "~"}:
@@ -96,6 +112,8 @@ def _parse_state(text: str) -> dict[str, Any]:
         if not separator or not key.strip():
             raise DecisionError(f"state.yaml 存在无效行：{line}")
         key = key.strip()
+        if key in data:
+            raise DecisionError(f"state.yaml 字段重复：{key}")
         raw = raw.strip()
         if raw:
             data[key] = _parse_scalar(raw)
@@ -124,7 +142,8 @@ def _parse_state(text: str) -> dict[str, Any]:
             item_key, item_separator, item_value = item_raw.partition(":")
             if not item_separator or not item_key.strip():
                 raise DecisionError(f"state.yaml 的 {key} 存在无效列表项")
-            item: dict[str, Any] = {item_key.strip(): _parse_scalar(item_value)}
+            item_key = item_key.strip()
+            item: dict[str, Any] = {item_key: _parse_scalar(item_value)}
             cursor += 1
             while cursor < len(lines):
                 nested = lines[cursor]
@@ -139,11 +158,81 @@ def _parse_state(text: str) -> dict[str, Any]:
                 nested_key, nested_separator, nested_value = nested.strip().partition(":")
                 if not nested_separator or not nested_key:
                     raise DecisionError(f"state.yaml 的 {key} 包含无效 blocker 字段")
-                item[nested_key.strip()] = _parse_scalar(nested_value)
+                nested_key = nested_key.strip()
+                if nested_key in item:
+                    raise DecisionError(f"state.yaml 的 {key} 存在重复 blocker 字段：{nested_key}")
+                item[nested_key] = _parse_scalar(nested_value)
                 cursor += 1
             items.append(item)
         data[key] = items
         index = cursor
+    return data
+
+
+def validate_runtime_state(data: dict[str, Any]) -> dict[str, Any]:
+    """Validate the constrained runtime-state shape before any governance action."""
+    unknown = sorted(set(data) - set(STATE_ORDER))
+    if unknown:
+        raise DecisionError(f"state.yaml 包含未知字段：{', '.join(unknown)}")
+    required = {
+        "schema_version",
+        "standard_version",
+        "revision",
+        "cycle",
+        "stage",
+        "stage_type",
+        "stage_status",
+        "gate_status",
+        "blockers",
+        "pending_decision_refs",
+        "active_change_refs",
+        "major_risk_refs",
+    }
+    missing = sorted(required - set(data))
+    if missing:
+        raise DecisionError(f"state.yaml 缺少必需字段：{', '.join(missing)}")
+    if data["schema_version"] != 1:
+        raise DecisionError("state.yaml 的 schema_version 必须是 1")
+    standard_version = data["standard_version"]
+    if not isinstance(standard_version, str) or not STANDARD_VERSION_RE.fullmatch(standard_version):
+        raise DecisionError("state.yaml 的 standard_version 无效")
+    revision = data["revision"]
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+        raise DecisionError("state.yaml 的 revision 必须是正整数")
+    cycle = data["cycle"]
+    if not isinstance(cycle, str) or not CYCLE_RE.fullmatch(cycle):
+        raise DecisionError("state.yaml 的 cycle 无效")
+    stage = data["stage"]
+    if isinstance(stage, bool) or not isinstance(stage, int) or not 1 <= stage <= 23:
+        raise DecisionError("state.yaml 的 stage 必须是 1 到 23 的整数")
+    stage_type = data["stage_type"]
+    if stage_type not in STATE_STAGE_TYPES:
+        raise DecisionError(f"state.yaml 的 stage_type 无效：{stage_type}")
+    stage_status = data["stage_status"]
+    if stage_status not in STATE_STAGE_STATUSES:
+        raise DecisionError(f"state.yaml 的 stage_status 无效：{stage_status}")
+    gate_status = data["gate_status"]
+    if stage_type == "GATED" and gate_status not in STATE_GATE_STATUSES:
+        raise DecisionError(f"GATED Stage 的 gate_status 无效：{gate_status}")
+    if stage_type != "GATED" and gate_status is not None:
+        raise DecisionError("非 GATED Stage 的 gate_status 必须是 null")
+    if not isinstance(data["blockers"], list) or any(not isinstance(item, dict) for item in data["blockers"]):
+        raise DecisionError("state.yaml 的 blockers 必须是对象列表")
+    for key, pattern in (
+        ("pending_decision_refs", DECISION_ID_RE),
+        ("active_change_refs", re.compile(r"^CHANGE-[A-Z0-9][A-Z0-9_-]*$")),
+        ("major_risk_refs", re.compile(r"^RISK-[A-Z0-9][A-Z0-9_-]*$")),
+    ):
+        values = data[key]
+        if not isinstance(values, list) or any(not isinstance(item, str) or not pattern.fullmatch(item) for item in values):
+            raise DecisionError(f"state.yaml 的 {key} 必须是有效引用字符串列表")
+    for key in ("current_goal", "updated_by"):
+        if key in data and not isinstance(data[key], str):
+            raise DecisionError(f"state.yaml 的 {key} 必须是字符串")
+    if "scope_ref" in data and data["scope_ref"] is not None and not isinstance(data["scope_ref"], str):
+        raise DecisionError("state.yaml 的 scope_ref 必须是字符串或 null")
+    if "updated_at" in data and data["updated_at"] is not None and not isinstance(data["updated_at"], str):
+        raise DecisionError("state.yaml 的 updated_at 必须是字符串或 null")
     return data
 
 
@@ -194,21 +283,14 @@ def _dump_state(data: dict[str, Any]) -> str:
 
 def _load_state(root: Path) -> tuple[Path, dict[str, Any]]:
     path = root / ".ai" / "state.yaml"
+    assert_no_reparse(path)
     if not path.is_file():
         raise DecisionError("项目运行状态缺失；请先完成 Bootstrap")
     try:
         data = _parse_state(path.read_text(encoding="utf-8"))
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         raise DecisionError(f"无法读取 state.yaml：{exc}") from exc
-    required = {"revision", "cycle", "stage", "stage_type", "stage_status", "gate_status", "blockers", "pending_decision_refs"}
-    missing = sorted(required - set(data))
-    if missing:
-        raise DecisionError(f"state.yaml 缺少必需字段：{', '.join(missing)}")
-    if not isinstance(data["revision"], int) or data["revision"] < 1:
-        raise DecisionError("state.yaml 的 revision 必须是正整数")
-    if not isinstance(data["blockers"], list) or not isinstance(data["pending_decision_refs"], list):
-        raise DecisionError("state.yaml 的 blockers 和 pending_decision_refs 必须是列表")
-    return path, data
+    return path, validate_runtime_state(data)
 
 
 def load_runtime_state(project: Path) -> dict[str, Any]:
@@ -220,6 +302,7 @@ def load_runtime_state(project: Path) -> dict[str, Any]:
 @contextmanager
 def _decision_lock(root: Path) -> Iterator[None]:
     path = root / ".ai" / ".decision.lock"
+    assert_no_reparse(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+b") as handle:
         if handle.seek(0, os.SEEK_END) == 0:
@@ -252,11 +335,15 @@ def _decision_lock(root: Path) -> Iterator[None]:
 
 
 def _root(project: Path) -> Path:
-    root = project.expanduser().resolve()
+    candidate = project.expanduser()
+    assert_no_reparse(candidate)
+    root = candidate.resolve()
     if not root.is_dir():
         raise DecisionError(f"项目目录不存在：{root}")
+    assert_no_reparse(root)
     if not (root / ".ai").is_dir():
         raise DecisionError(f"APS 项目状态目录不存在：{root / '.ai'}")
+    assert_no_reparse(root / ".ai")
     return root
 
 

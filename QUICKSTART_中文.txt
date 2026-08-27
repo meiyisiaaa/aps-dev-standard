@@ -12,8 +12,8 @@ git diff --cached --check
 git commit -m "Configure APS distribution"
 git push
 
-git tag v1.2.1
-git push origin v1.2.1
+git tag v1.2.2
+git push origin v1.2.2
 
 之后任何机器：
 
@@ -44,9 +44,11 @@ aps status
 
 遇到阻塞后的恢复：
 1. 先运行 aps status，只执行输出的唯一 NEXT。
-2. 运行状态缺失或无法解析时，先运行 aps doctor --standard-only，修复后再运行 aps resume --no-launch。
-3. Standard 版本不匹配或托管文件冲突时，审查 aps upgrade 报告和 .ai/incoming/；不要自动合并本地修改。
-4. 待决策时运行 aps decision show/list，在当前对话完成决策卡分析，再运行 aps decision answer 或 aps decision cancel。
+2. 运行状态缺失或无法解析时，先运行 aps doctor --standard-only，修复后再运行 aps resume --no-launch；损坏状态不会被猜测为 NORMAL。
+3. 普通已有项目用 aps resume；只有 APS 半安装或损坏残留用 aps upgrade 修复；空目录用 aps init。
+4. Standard 版本不匹配或托管文件冲突时，先人工合并 .ai/incoming/<version>/，再运行 aps upgrade；不要自动合并本地修改。
+5. 除非明确接受备份后覆盖，不要使用 --force-managed。
+6. 待决策时运行 aps decision show/list，在当前对话完成决策卡分析，再运行 aps decision answer 或 aps decision cancel。
 
 常用：
 aps init        新项目

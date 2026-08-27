@@ -8,6 +8,8 @@
 2. 将 CLI 打印的完整 `APS Agent Handoff` 代码块发送到当前 Agent Host；不要依赖剪贴板或项目内 handoff 文件。
 3. Bootstrap 完成后运行 `aps doctor`，再运行 `aps status` 确认当前 Cycle、Stage、Gate、blocker 和下一步。
 
+APS CLI 恢复边界：普通已有项目使用 `aps resume`；只有检测到 APS 可识别的半安装或损坏残留时使用 `aps upgrade` 修复；空目录使用 `aps init`。托管文件冲突必须先人工合并 `.ai/incoming/<version>/`，再运行 `aps upgrade`；运行状态损坏时先运行 `aps doctor --standard-only`。除非明确接受备份后覆盖，不要使用 `--force-managed`。
+
 遇到阻塞后的恢复：
 - 先运行 `aps status`，按唯一的 `NEXT` 操作处理；不要猜测状态或跳过 Gate。
 - 运行状态缺失或无法解析时，先运行 `aps doctor --standard-only`；修复后再运行 `aps resume --no-launch`。

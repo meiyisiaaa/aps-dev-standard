@@ -10,11 +10,12 @@ from pathlib import Path
 
 from . import __version__, STANDARD_VERSION
 from .decision import DecisionError, answer_request, cancel_request, list_requests, load_runtime_state, register_request, show_request
-from .installer import BEGIN_AGENTS, BEGIN_GITIGNORE, END_AGENTS, END_GITIGNORE, install_standard
+from .installer import BEGIN_AGENTS, BEGIN_GITIGNORE, END_AGENTS, END_GITIGNORE, SHA256_RE, assert_no_reparse, install_standard, is_safe_version
 from .research import render_brief
 
 HOSTS = ("codex", "generic")
 PLAN_MODE_REQUIRED_STAGES = frozenset({1, 5, 6, 7, 8, 9, 10, 13, 14, 15, 16, 20})
+MANAGED_PATH_PREFIX = ".ai/"
 
 
 def configure_stdio() -> None:
@@ -36,6 +37,12 @@ def stage_requires_plan_mode(state: dict) -> bool:
 
 def bundle_dir() -> Path:
     return Path(__file__).resolve().parent / "bundle"
+
+
+def project_path(value: Path) -> Path:
+    candidate = value.expanduser()
+    assert_no_reparse(candidate)
+    return candidate.resolve()
 
 
 def project_has_content(root: Path) -> bool:
@@ -88,8 +95,16 @@ def has_aps_artifacts(root: Path) -> bool:
         ".ai/registry.yaml",
         ".ai/standards/lifecycle.md",
         ".ai/bootstrap/bootstrap-prompt.txt",
+        ".ai/tools/standards-lint.py",
+        ".ai/.install.lock",
     )
-    return has_aps_markers(root) or any((root / path).exists() for path in paths)
+    if has_aps_markers(root) or any((root / path).exists() or (root / path).is_symlink() for path in paths):
+        return True
+    incoming = root / ".ai" / "incoming"
+    try:
+        return incoming.is_dir() and any(incoming.rglob("*"))
+    except OSError:
+        return True
 
 
 def governed_ancestor(root: Path) -> Path | None:
@@ -111,6 +126,78 @@ def read_manifest(root: Path) -> dict:
         return {}
 
 
+def _safe_managed_path(value: object) -> bool:
+    if not isinstance(value, str) or not value.startswith(MANAGED_PATH_PREFIX) or "\\" in value:
+        return False
+    if any(ord(char) < 32 for char in value):
+        return False
+    parts = value.split("/")
+    return len(parts) > 1 and all(part not in {"", ".", ".."} for part in parts)
+
+
+def manifest_problems(manifest: object) -> list[str]:
+    if not isinstance(manifest, dict):
+        return ["manifest 不是 JSON 对象"]
+    problems: list[str] = []
+    if manifest.get("name") != "ai-project-standard":
+        problems.append("manifest name 无效")
+    if not is_safe_version(manifest.get("version")):
+        problems.append("manifest version 无效")
+    if manifest.get("layout_version") != 1:
+        problems.append("manifest layout_version 无效")
+    installed = manifest.get("installed_files")
+    if not isinstance(installed, dict) or not installed:
+        problems.append("manifest installed_files 缺失或为空")
+    else:
+        seen_paths: set[str] = set()
+        for relative, digest in installed.items():
+            if not _safe_managed_path(relative) or not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
+                problems.append(f"manifest 托管文件记录无效：{relative}")
+                continue
+            folded = relative.casefold()
+            if folded in seen_paths:
+                problems.append(f"manifest 托管文件路径大小写碰撞：{relative}")
+            seen_paths.add(folded)
+    conflicts = manifest.get("local_modification_conflicts", [])
+    if not isinstance(conflicts, list) or any(not _safe_managed_path(item) for item in conflicts):
+        problems.append("manifest local_modification_conflicts 无效")
+    return problems
+
+
+def runtime_state(root: Path) -> tuple[dict | None, str | None]:
+    path = root / ".ai" / "state.yaml"
+    if not path.exists() and not path.is_symlink():
+        return None, None
+    if path.is_symlink():
+        return None, "state.yaml 不能是符号链接"
+    try:
+        return load_runtime_state(root), None
+    except DecisionError as exc:
+        return None, str(exc)
+
+
+def boundary_error(path: Path) -> str | None:
+    try:
+        assert_no_reparse(path)
+    except RuntimeError as exc:
+        return str(exc)
+    return None
+
+
+def project_boundary_error(root: Path) -> str | None:
+    for relative, directory in ((".ai", True), (".agents", True), ("AGENTS.md", False), (".gitignore", False)):
+        path = root / relative
+        if not path.exists() and not path.is_symlink():
+            continue
+        if (error := boundary_error(path)):
+            return f"{relative}：{error}"
+        if directory and not path.is_dir():
+            return f"{relative} 必须是目录"
+        if not directory and not path.is_file():
+            return f"{relative} 必须是普通文件"
+    return None
+
+
 def missing_managed_files(root: Path, manifest: dict) -> list[str]:
     installed_files = manifest.get("installed_files")
     if not isinstance(installed_files, dict) or not installed_files:
@@ -118,29 +205,26 @@ def missing_managed_files(root: Path, manifest: dict) -> list[str]:
     missing = []
     for relative in installed_files:
         path = Path(relative)
-        if path.is_absolute() or ".." in path.parts:
+        unsafe_target = False
+        if _safe_managed_path(relative) and not path.is_absolute() and ".." not in path.parts:
+            try:
+                assert_no_reparse(root / path)
+            except RuntimeError:
+                unsafe_target = True
+        else:
+            unsafe_target = True
+        if unsafe_target:
             missing.append(f"invalid managed path: {relative}")
         elif not (root / path).is_file():
             missing.append(relative)
     return missing
 
 
-def read_runtime_state(root: Path) -> dict[str, str]:
-    path = root / ".ai" / "state.yaml"
-    if not path.is_file():
-        return {}
-    fields: dict[str, str] = {}
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return {}
-    for line in lines:
-        key, separator, value = line.partition(":")
-        if separator and key.strip() in {"cycle", "stage_status"}:
-            fields[key.strip()] = value.strip().strip("\"'")
-    if not fields.get("cycle") or not fields.get("stage_status"):
-        return {}
-    return fields
+def read_runtime_state(root: Path) -> dict:
+    state, error = runtime_state(root)
+    if error:
+        raise DecisionError(error)
+    return state or {}
 
 
 def ensure_git(root: Path, enabled: bool = True) -> None:
@@ -175,13 +259,20 @@ def command_hint(argv: list[str]) -> str:
 
 
 def _runtime_summary(root: Path) -> list[str]:
+    state_path = root / ".ai" / "state.yaml"
+    if not state_path.is_file():
+        return [
+            "Runtime state: not initialized（运行状态尚未初始化）",
+            "原因：Bootstrap 尚未写入 `.ai/state.yaml`，当前不能推断 active Stage。",
+            "Next action: 在 Agent Host 中完成 Bootstrap；Codex 不会自动启动普通会话。",
+        ]
     try:
         state = load_runtime_state(root)
     except DecisionError as exc:
         return [
             f"Runtime state invalid: {exc}",
             f"原因：项目运行状态无法安全解析。",
-            "Next action: 先运行 `aps doctor --standard-only`，修复报告中的状态问题后再运行 `aps resume --no-launch`。",
+            "Next action: 先运行 `aps doctor --standard-only`，修复第一项状态问题后再运行 `aps resume --no-launch`。",
         ]
 
     lines = [
@@ -270,10 +361,10 @@ def handoff_prompt(mode: str, root: Path | None = None) -> str:
 
 
 def current_stage_requires_plan_mode(root: Path) -> bool:
-    try:
-        return stage_requires_plan_mode(load_runtime_state(root))
-    except DecisionError:
-        return False
+    state, error = runtime_state(root)
+    if error:
+        raise DecisionError(error)
+    return True if state is None else stage_requires_plan_mode(state)
 
 
 def launch_host(root: Path, host: str, prompt: str, no_launch: bool, require_plan_mode: bool = False) -> int:
@@ -312,11 +403,68 @@ def run_doctor(root: Path, host: str, strict_runtime: bool = True) -> int:
         print(f"FAIL  项目目录不存在：{root}")
         recovery("doctor 找不到指定项目目录。", "确认路径后重新运行 `aps doctor <PROJECT>`。")
         return 2
+    if (boundary := project_boundary_error(root)):
+        print(f"FAIL  项目边界不安全：{boundary}")
+        recovery("APS 不会跟随链接、reparse point 或错误类型的项目边界读取或写入文件。", "先移除或重命名冲突路径，再运行 `aps doctor --standard-only`。")
+        return 2
+    manifest_path = root / ".ai" / "standard-manifest.json"
+    manifest = read_manifest(root)
+    if manifest_path.exists():
+        path_error = boundary_error(manifest_path)
+        if path_error:
+            print(f"FAIL  APS manifest 路径不安全：{path_error}")
+            recovery("manifest 位于符号链接或 Windows reparse point 上。", "先移除该路径碰撞，再运行 `aps upgrade` 修复 Standard。")
+            return 2
+        problems = manifest_problems(manifest)
+        if problems:
+            print(f"FAIL  APS manifest 无效：{problems[0]}")
+            recovery("无法确认当前 Standard 文件集合和托管边界。", "先运行 `aps upgrade` 修复半安装或损坏的 Standard。")
+            return 2
+        if manifest.get("version") != STANDARD_VERSION:
+            print(f"FAIL  Standard 版本不匹配：{manifest.get('version')} -> {STANDARD_VERSION}")
+            recovery("当前项目使用旧版 Standard，doctor 不会隐式覆盖它。", "运行 `aps upgrade`，再重新运行 `aps doctor`。")
+            return 2
+        marker_missing = missing_aps_markers(root)
+        if marker_missing:
+            print(f"FAIL  APS 路由标记不完整：{marker_missing[0]}")
+            recovery("项目入口标记缺失，Agent Host 可能无法读取治理规则。", "运行 `aps upgrade` 修复标记后重试 `aps doctor`。")
+            return 2
+        missing = missing_managed_files(root, manifest)
+        if missing:
+            print(f"FAIL  Standard 托管文件缺失：{missing[0]}")
+            recovery("manifest 记录的托管文件无法全部验证。", "运行 `aps upgrade` 修复文件后重试 `aps doctor`。")
+            return 2
+        conflicts = manifest.get("local_modification_conflicts", [])
+        if conflicts:
+            print(f"FAIL  存在未解决的托管文件冲突：{conflicts[0]}")
+            recovery("本地修改的 Standard 文件尚未人工合并。", "先人工合并 `.ai/incoming/<version>/` 对应文件，再运行 `aps upgrade`。")
+            return 2
+    elif has_aps_artifacts(root):
+        print("FAIL  APS 安装不完整。")
+        recovery("检测到 APS 残留但缺少有效 manifest，doctor 不会把它当作普通项目。", "运行 `aps upgrade` 修复可识别的 Standard 文件。")
+        return 2
     lint = root / ".ai" / "tools" / "standards-lint.py"
     if not lint.is_file():
-        print("FAIL  AI Project Standard 未安装。")
-        recovery("项目中缺少 `.ai/tools/standards-lint.py`。", "新项目运行 `aps init`；已有项目运行 `aps resume`；已接管项目运行 `aps upgrade`。")
+        print("FAIL  AI Project Standard 未完整安装。")
+        if manifest_path.exists() or has_aps_artifacts(root):
+            next_action = "运行 `aps upgrade` 修复半安装 Standard，再重新运行 `aps doctor`。"
+        elif project_has_content(root):
+            next_action = "运行 `aps resume --no-launch` 接管已有项目，再重新运行 `aps doctor`。"
+        else:
+            next_action = "运行 `aps init --no-launch` 初始化新项目，再重新运行 `aps doctor`。"
+        recovery("项目中缺少 `.ai/tools/standards-lint.py`，无法开始体检。", next_action)
         return 2
+    if strict_runtime:
+        state_path = root / ".ai" / "state.yaml"
+        if not state_path.is_file():
+            print("FAIL  Runtime state 尚未初始化。")
+            recovery("Bootstrap 尚未写入 `.ai/state.yaml`，无法检查 active Stage。", "运行 `aps resume --no-launch`，完成 Bootstrap 后再运行 `aps doctor`。")
+            return 2
+        _, state_error = runtime_state(root)
+        if state_error:
+            print(f"FAIL  Runtime state 无法严格解析：{state_error}")
+            recovery("状态损坏时 APS 不会猜测普通模式，也不会启动普通会话。", "运行 `aps doctor --standard-only`，修复第一项状态问题后再运行 `aps resume --no-launch`。")
+            return 2
     cmd = [sys.executable, str(lint)]
     if strict_runtime:
         cmd += ["--project-root", str(root), "--host", host]
@@ -332,7 +480,11 @@ def install(root: Path, host: str, force_managed: bool = False, quiet: bool = Fa
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    root = args.project.expanduser().resolve()
+    root = project_path(args.project)
+    if (boundary := project_boundary_error(root)):
+        print(f"REFUSE  项目边界不安全：{boundary}")
+        recovery("APS 不会跟随链接、reparse point 或错误类型的项目边界写入文件。", "先移除或重命名冲突路径，再运行 `aps init --no-launch`。")
+        return 2
     ancestor = governed_ancestor(root)
     if ancestor:
         print(f"REFUSE  检测到位于受 APS 管理项目下的嵌套项目：{ancestor}")
@@ -359,10 +511,14 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_resume(args: argparse.Namespace) -> int:
-    root = args.project.expanduser().resolve()
+    root = project_path(args.project)
     if not root.is_dir():
         print(f"FAIL  项目目录不存在：{root}")
         recovery("resume 找不到指定项目目录。", "确认路径后重新运行 `aps resume <PROJECT>`。")
+        return 2
+    if (boundary := project_boundary_error(root)):
+        print(f"REFUSE  项目边界不安全：{boundary}")
+        recovery("APS 不会跟随链接、reparse point 或错误类型的项目边界写入文件。", "先移除或重命名冲突路径，再运行 `aps resume --no-launch`。")
         return 2
     ancestor = governed_ancestor(root)
     if ancestor and not is_governed(root):
@@ -371,8 +527,14 @@ def cmd_resume(args: argparse.Namespace) -> int:
         return 2
     if is_governed(root):
         manifest = read_manifest(root)
-        if not manifest:
-            print("REFUSE  APS manifest 不可读或无效。")
+        path_error = boundary_error(root / ".ai" / "standard-manifest.json")
+        if path_error:
+            print(f"REFUSE  APS manifest 路径不安全：{path_error}")
+            recovery("不能从链接或 reparse point 读取治理清单。", "先移除该路径碰撞，再运行 `aps upgrade` 修复 Standard。")
+            return 2
+        problems = manifest_problems(manifest)
+        if problems:
+            print(f"REFUSE  APS manifest 不可读或无效：{problems[0]}")
             recovery("无法确认已安装 Standard 文件的完整性。", "先人工检查项目状态；确认可修复后运行 `aps upgrade`，不要用 `init` 覆盖项目。")
             return 2
         if manifest.get("version") != STANDARD_VERSION:
@@ -392,6 +554,19 @@ def cmd_resume(args: argparse.Namespace) -> int:
             for item in missing:
                 print(f"  - {item}")
             recovery("manifest 记录的托管文件无法全部找到。", "审查缺失文件后运行 `aps upgrade`，再重新运行 `aps resume`。")
+            return 2
+        conflicts = manifest.get("local_modification_conflicts", [])
+        if conflicts:
+            print("REFUSE  存在未解决的托管文件冲突：")
+            for item in conflicts:
+                print(f"  - {item}")
+            recovery("本地修改的 Standard 文件仍未人工合并，resume 不会绕过冲突恢复。", "在 Host 中人工合并 `.ai/incoming/<version>/` 对应文件，再运行 `aps upgrade`。")
+            return 2
+        state_path = root / ".ai" / "state.yaml"
+        _, state_error = runtime_state(root)
+        if (state_path.exists() or state_path.is_symlink()) and state_error:
+            print(f"REFUSE  Runtime state 无法严格解析：{state_error}")
+            recovery("状态损坏时 APS 不会猜测普通模式，也不会启动普通会话。", "运行 `aps doctor --standard-only`，修复第一项状态问题后再运行 `aps resume --no-launch`。")
             return 2
         return launch_host(
             root,
@@ -414,18 +589,28 @@ def cmd_resume(args: argparse.Namespace) -> int:
 
 
 def cmd_rebaseline(args: argparse.Namespace) -> int:
-    root = args.project.expanduser().resolve()
+    root = project_path(args.project)
     if not root.is_dir() or not is_governed(root):
         print("REFUSE  rebaseline 需要已存在且受 APS 管理的项目。")
         recovery("当前目录没有可恢复的有效 APS 项目。", "先运行 `aps resume` 接管已有项目，或对新项目运行 `aps init`。")
+        return 2
+    if (boundary := project_boundary_error(root)):
+        print(f"REFUSE  项目边界不安全：{boundary}")
+        recovery("rebaseline 不会跟随链接、reparse point 或错误类型的项目边界写入文件。", "先移除或重命名冲突路径，再运行 `aps rebaseline --confirm`。")
         return 2
     if not args.confirm:
         print("REFUSE  rebaseline 会创建新的 Cycle，必须显式确认。")
         recovery("未检测到 `--confirm`，因此没有创建新 Cycle，也没有修改工作区。", "确认当前 Cycle 可重新审查后运行 `aps rebaseline --confirm`。")
         return 2
     manifest = read_manifest(root)
-    if not manifest:
-        print("REFUSE  APS manifest 不可读或无效。")
+    path_error = boundary_error(root / ".ai" / "standard-manifest.json")
+    if path_error:
+        print(f"REFUSE  APS manifest 路径不安全：{path_error}")
+        recovery("rebaseline 不能从链接或 reparse point 读取治理清单。", "先移除该路径碰撞，再运行 `aps upgrade` 修复 Standard。")
+        return 2
+    problems = manifest_problems(manifest)
+    if problems:
+        print(f"REFUSE  APS manifest 不可读或无效：{problems[0]}")
         recovery("无法确认当前 Standard 文件集合。", "先人工审查项目状态，再运行 `aps upgrade` 修复 Standard。")
         return 2
     marker_missing = missing_aps_markers(root)
@@ -433,8 +618,12 @@ def cmd_rebaseline(args: argparse.Namespace) -> int:
         print("REFUSE  APS 路由标记不完整。")
         recovery("AGENTS.md 或 .gitignore 的 APS 管理块不完整。", "先运行 `aps upgrade`，再重新确认 `aps rebaseline --confirm`。")
         return 2
-    runtime = read_runtime_state(root)
-    if not runtime:
+    runtime, state_error = runtime_state(root)
+    if state_error:
+        print(f"REFUSE  Runtime state 无法严格解析：{state_error}")
+        recovery("rebaseline 不能在损坏状态上推断当前 Cycle。", "运行 `aps doctor --standard-only`，修复第一项状态问题后再运行 `aps rebaseline --confirm`。")
+        return 2
+    if runtime is None:
         print("REFUSE  rebaseline 需要已初始化的运行状态。")
         recovery("当前项目尚未完成 Bootstrap，无法判断应从哪个 Cycle 重建。", "先在 Agent Host 完成 Bootstrap，再运行 `aps rebaseline --confirm`。")
         return 2
@@ -451,27 +640,49 @@ def cmd_rebaseline(args: argparse.Namespace) -> int:
         print("REFUSE  已安装 Standard 文件缺失或无效。")
         recovery("manifest 记录的托管文件无法全部找到。", "先运行 `aps upgrade` 修复文件，再运行 `aps rebaseline --confirm`。")
         return 2
+    conflicts = manifest.get("local_modification_conflicts", [])
+    if conflicts:
+        print("REFUSE  存在未解决的托管文件冲突。")
+        recovery("rebaseline 不会绕过本地 Standard 文件冲突。", "先人工合并 `.ai/incoming/<version>/` 对应文件，再运行 `aps upgrade`。")
+        return 2
     return launch_host(root, args.host, handoff_prompt("rebaseline", root), args.no_launch, require_plan_mode=True)
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    root = args.project.expanduser().resolve()
+    root = project_path(args.project)
     host = args.host
     return run_doctor(root, host, strict_runtime=not args.standard_only)
 
 
 def cmd_upgrade(args: argparse.Namespace) -> int:
-    root = args.project.expanduser().resolve()
+    root = project_path(args.project)
     if not root.is_dir():
         print(f"FAIL  项目目录不存在：{root}")
         recovery("upgrade 找不到指定项目目录。", "确认路径后重新运行 `aps upgrade <PROJECT>`。")
+        return 2
+    if (boundary := project_boundary_error(root)):
+        print(f"REFUSE  项目边界不安全：{boundary}")
+        recovery("APS 不会跟随链接、reparse point 或错误类型的项目边界写入文件。", "先移除或重命名冲突路径，再运行 `aps upgrade`。")
         return 2
     ancestor = governed_ancestor(root)
     if ancestor and not is_governed(root):
         print(f"REFUSE  当前目录是受 APS 管理项目下的未接管嵌套目录：{ancestor}")
         recovery("upgrade 不能在嵌套目录建立第二套治理边界。", "回到受治理项目根目录运行 `aps upgrade`。")
         return 2
-    before = read_manifest(root).get("version")
+    manifest_path = root / ".ai" / "standard-manifest.json"
+    before_manifest = read_manifest(root)
+    manifest_problems_found = manifest_path.exists() and bool(manifest_problems(before_manifest))
+    if not manifest_path.exists() and not has_aps_artifacts(root):
+        if project_has_content(root):
+            print("REFUSE  当前项目尚未受 APS 管理，upgrade 不会越权接管。")
+            recovery("普通旧项目必须先建立接管边界和 Bootstrap 路径。", "运行 `aps resume --no-launch` 接管已有项目。")
+        else:
+            print("REFUSE  当前目录为空，upgrade 不负责初始化新项目。")
+            recovery("空目录没有可升级的 APS 安装。", "运行 `aps init --no-launch` 初始化新项目。")
+        return 2
+    if manifest_problems_found or (not manifest_path.exists() and has_aps_artifacts(root)):
+        print("WARN  检测到 APS 半安装或损坏残留，upgrade 将只修复可识别的 Standard 文件。")
+    before = before_manifest.get("version")
     result = install(root, args.host, args.force_managed)
     after = result["version"]
     if before == after and result["changed"] == 0 and not result["manifest_changed"]:
@@ -492,40 +703,86 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    root = args.project.expanduser().resolve()
+    root = project_path(args.project)
     if not root.is_dir():
         print(f"FAIL  项目目录不存在：{root}")
         recovery("status 找不到指定项目目录。", "确认路径后重新运行 `aps status <PROJECT>`。")
         return 2
+    if (boundary := project_boundary_error(root)):
+        print(f"Project: {root}")
+        print(f"FAIL  项目边界不安全：{boundary}")
+        recovery("APS 不会跟随链接、reparse point 或错误类型的项目边界读取状态。", "先移除或重命名冲突路径，再运行 `aps status`。")
+        return 2
     manifest = read_manifest(root)
-    manifest_present = (root / ".ai" / "standard-manifest.json").is_file()
+    manifest_path = root / ".ai" / "standard-manifest.json"
+    manifest_present = manifest_path.exists() or manifest_path.is_symlink()
     state = root / ".ai" / "state.yaml"
-    invalid_manifest = manifest_present and not manifest
     print(f"Project: {root}")
-    if invalid_manifest:
-        print("Governed: invalid manifest（治理清单无效）")
+    if not manifest_present:
+        if has_aps_artifacts(root):
+            print("Governed: partial APS install（半安装）")
+            print("REFUSE  检测到 APS 残留，但没有有效 manifest。")
+            recovery("当前安装边界不完整，status 不会把半安装当作正常项目。", "运行 `aps upgrade` 修复可识别的 APS Standard 文件。")
+            return 2
+        print("Governed: no（是否受治理）")
+        print("Runtime state: not initialized")
+        if project_has_content(root):
+            print("NEXT  运行 `aps resume --no-launch` 接管已有项目。")
+        else:
+            print("NEXT  运行 `aps init --no-launch` 初始化新项目。")
+        return 0
+
+    print("Governed: yes（是否受治理）")
+    path_error = boundary_error(manifest_path)
+    if path_error:
+        print(f"FAIL  APS manifest 路径不安全：{path_error}")
+        recovery("manifest 位于符号链接或 Windows reparse point 上。", "先移除该路径碰撞，再运行 `aps upgrade` 修复 Standard。")
+        return 2
+    problems = manifest_problems(manifest)
+    if problems:
+        print(f"FAIL  APS manifest 无效：{problems[0]}")
         recovery("无法从 `.ai/standard-manifest.json` 确认托管文件和版本。", "先人工审查项目状态，确认后运行 `aps upgrade`，不要运行 `aps init`。")
-    else:
-        print(f"Governed: {'yes' if manifest else 'no'}（是否受治理）")
-    if manifest:
-        print(f"Standard: {manifest.get('version', 'unknown')}")
-        conflicts = manifest.get("local_modification_conflicts") or []
-        print(f"Managed conflicts: {len(conflicts)}")
-        if conflicts:
-            print("WARN  托管文件存在本地修改冲突：")
-            for item in conflicts:
-                print(f"  - {item}")
-    print(f"Runtime state: {'present' if state.is_file() else 'not initialized'}")
-    if state.is_file():
-        for line in _runtime_summary(root):
-            print("  " + line)
-    elif manifest:
-        print("NEXT  运行 `aps resume --no-launch`，让 Agent Host 按当前项目状态完成 Bootstrap。")
-    elif project_has_content(root):
-        print("NEXT  运行 `aps resume --no-launch` 接管已有项目。")
-    else:
-        print("NEXT  运行 `aps init --no-launch` 初始化新项目。")
-    return 2 if invalid_manifest else 0
+        return 2
+
+    print(f"Standard: {manifest['version']}")
+    if manifest["version"] != STANDARD_VERSION:
+        print(f"FAIL  Standard 版本不匹配：当前 {manifest['version']}，内置 {STANDARD_VERSION}。")
+        recovery("resume 不会隐式升级或覆盖项目中的 Standard 文件。", "运行 `aps upgrade`，确认无冲突后再运行 `aps status`。")
+        return 2
+    marker_missing = missing_aps_markers(root)
+    if marker_missing:
+        print(f"FAIL  APS 路由标记不完整：{marker_missing[0]}")
+        recovery("AGENTS.md 或 .gitignore 的 APS 管理块缺失或不完整。", "运行 `aps upgrade` 修复路由标记后重试 `aps status`。")
+        return 2
+    missing = missing_managed_files(root, manifest)
+    if missing:
+        print(f"FAIL  Standard 托管文件缺失或无效：{missing[0]}")
+        recovery("manifest 记录的托管文件无法全部验证。", "运行 `aps upgrade` 修复文件后重试 `aps status`。")
+        return 2
+    conflicts = manifest.get("local_modification_conflicts", [])
+    print(f"Managed conflicts: {len(conflicts)}")
+    if conflicts:
+        print("REFUSE  托管文件存在未解决的本地修改冲突：")
+        for item in conflicts:
+            print(f"  - {item}")
+        recovery("APS 不会自动合并本地 Standard 修改。", "先人工合并 `.ai/incoming/<version>/` 对应文件，再运行 `aps upgrade`。")
+        return 2
+
+    state_exists = state.exists() or state.is_symlink()
+    if not state_exists:
+        print("Runtime state: not initialized")
+        print("NEXT  运行 `aps resume --no-launch`，让 Agent Host 完成 Bootstrap。")
+        return 0
+    _, state_error = runtime_state(root)
+    if state_error:
+        print(f"Runtime state: invalid（状态无效）")
+        print(f"FAIL  {state_error}")
+        recovery("状态损坏时 APS 不会默认判定为普通模式。", "运行 `aps doctor --standard-only`，修复第一项状态问题后再运行 `aps resume --no-launch`。")
+        return 2
+    print("Runtime state: present")
+    for line in _runtime_summary(root):
+        print("  " + line)
+    return 0
 
 
 def cmd_decision_request(args: argparse.Namespace) -> int:
@@ -713,7 +970,7 @@ def main(argv: list[str] | None = None) -> int:
         return 130
     except Exception as exc:
         command = getattr(args, "command", None)
-        print(f"FAIL  命令未完成：{exc}", file=sys.stderr)
+        print(f"FAIL  {exc}", file=sys.stderr)
         if command in {"init", "resume", "upgrade", "status", "decision", "research"}:
             if command == "decision":
                 cause = "Decision Request 或项目运行状态未通过校验。"
@@ -723,6 +980,6 @@ def main(argv: list[str] | None = None) -> int:
                 cause = "安装或初始化过程中出现未满足的本地环境条件。"
             else:
                 cause = "项目当前状态不满足该命令的安全前置条件。"
-            print(f"原因：{cause} 原始诊断：{exc}", file=sys.stderr)
+            print(f"原因：{cause}", file=sys.stderr)
             print(f"NEXT  修复上方问题后重新运行：`{command_hint(argv)}`", file=sys.stderr)
         return 1

@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -43,6 +47,26 @@ def run_python_capture(*args: str, cwd: Path = ROOT) -> str:
     result = subprocess.run(
         command,
         cwd=cwd,
+        text=True,
+        encoding="utf-8",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    print(result.stdout, end="")
+    if result.returncode:
+        raise SystemExit(result.returncode)
+    return result.stdout
+
+
+def run_python_capture_env(env_updates: dict[str, str], *args: str, cwd: Path = ROOT) -> str:
+    command = [sys.executable, *args]
+    print("+", " ".join(command), f"[env: {env_updates}]")
+    environment = os.environ.copy()
+    environment.update(env_updates)
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        env=environment,
         text=True,
         encoding="utf-8",
         stdout=subprocess.PIPE,
@@ -113,6 +137,32 @@ def snapshot_files(root: Path) -> dict[str, bytes]:
     }
 
 
+def safe_extract_zip(archive: Path, destination: Path) -> None:
+    """Test the same archive boundary expected from the online installers."""
+    seen: set[str] = set()
+    with zipfile.ZipFile(archive) as source:
+        for info in source.infolist():
+            name = info.filename.replace("\\", "/")
+            key = name.rstrip("/")
+            if not key or name.startswith("/") or Path(key).drive or re.match(r"^[A-Za-z]:", key):
+                raise ValueError(f"unsafe ZIP path: {name}")
+            parts = key.split("/")
+            if any(part in {"", ".", ".."} for part in parts) or any(ord(char) < 32 for char in name):
+                raise ValueError(f"unsafe ZIP path: {name}")
+            if key.casefold() in seen:
+                raise ValueError(f"duplicate ZIP path: {name}")
+            seen.add(key.casefold())
+            if stat.S_IFMT((info.external_attr >> 16) & 0xFFFF) == stat.S_IFLNK:
+                raise ValueError(f"ZIP link entry is not allowed: {name}")
+            target = destination.joinpath(*parts)
+            if name.endswith("/"):
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with source.open(info) as input_file, target.open("wb") as output:
+                    shutil.copyfileobj(input_file, output)
+
+
 def run_launcher(launcher: Path, args: list[str]) -> None:
     if sys.platform == "win32":
         command_line = subprocess.list2cmdline([str(launcher), *args])
@@ -169,13 +219,51 @@ def main() -> int:
         if snapshot_files(adopted) != adopted_after:
             raise SystemExit("repeated resume changed an adopted project")
 
+        ordinary = temp / "ordinary-project"
+        ordinary.mkdir()
+        (ordinary / "app.txt").write_text("ordinary project\n", encoding="utf-8")
+        ordinary_before = snapshot_files(ordinary)
+        ordinary_upgrade = run_python_expect_failure_capture("aps.py", "upgrade", str(ordinary), "--host", "generic")
+        if "aps resume --no-launch" not in ordinary_upgrade or snapshot_files(ordinary) != ordinary_before:
+            raise SystemExit("upgrade took over an ordinary ungoverned project")
+
+        empty = temp / "empty-project"
+        empty.mkdir()
+        empty_upgrade = run_python_expect_failure_capture("aps.py", "upgrade", str(empty), "--host", "generic")
+        if "aps init --no-launch" not in empty_upgrade or snapshot_files(empty):
+            raise SystemExit("upgrade did not reject an empty directory")
+
+        partial = temp / "partial-project"
+        (partial / ".ai" / "standards").mkdir(parents=True)
+        partial_lifecycle = ROOT / "src" / "aps_cli" / "bundle" / "package" / "standards" / "lifecycle.md"
+        (partial / ".ai" / "standards" / "lifecycle.md").write_bytes(partial_lifecycle.read_bytes())
+        partial_status = run_python_expect_failure_capture("aps.py", "status", str(partial))
+        if "partial APS install" not in partial_status or "aps upgrade" not in partial_status:
+            raise SystemExit("status did not classify an APS partial install")
+        run_python("aps.py", "upgrade", str(partial), "--host", "generic")
+        if not (partial / ".ai" / "standard-manifest.json").is_file():
+            raise SystemExit("upgrade did not repair an APS partial install")
+
         manifest = project / ".ai" / "standard-manifest.json"
         manifest_before = manifest.read_bytes()
-        manifest.write_text(manifest.read_text(encoding="utf-8").replace('"version": "1.2.1"', '"version": "0.0.0"'), encoding="utf-8")
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace('"version": "1.2.2"', '"version": "0.0.0"'), encoding="utf-8")
         mismatch_output = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
         if "REFUSE" not in mismatch_output or "aps upgrade" not in mismatch_output:
             raise SystemExit("version mismatch resume did not provide recovery guidance")
         manifest.write_bytes(manifest_before)
+
+        manifest.write_text("{\n", encoding="utf-8")
+        bad_manifest_status = run_python_expect_failure_capture("aps.py", "status", str(project))
+        if "manifest" not in bad_manifest_status or "aps upgrade" not in bad_manifest_status:
+            raise SystemExit("status did not reject a malformed manifest")
+        manifest.write_bytes(manifest_before)
+        managed_lifecycle = project / ".ai" / "standards" / "lifecycle.md"
+        managed_lifecycle_bytes = managed_lifecycle.read_bytes()
+        managed_lifecycle.unlink()
+        missing_file_status = run_python_expect_failure_capture("aps.py", "status", str(project))
+        if "托管文件缺失" not in missing_file_status or "aps upgrade" not in missing_file_status:
+            raise SystemExit("status did not report a missing managed file")
+        managed_lifecycle.write_bytes(managed_lifecycle_bytes)
 
         nested = project / "nested"
         nested.mkdir()
@@ -202,6 +290,31 @@ def main() -> int:
         if "Plan mode is required" not in codex_resume or "will not auto-launch" not in codex_resume:
             raise SystemExit("Codex resume did not block a normal session for a Plan-required Stage")
         normal_state = state.read_text(encoding="utf-8")
+        state.unlink()
+        missing_state_status = run_python_capture("aps.py", "status", str(project))
+        missing_state_resume = run_python_capture("aps.py", "resume", str(project), "--host", "codex")
+        if "not initialized" not in missing_state_status or "will not auto-launch" not in missing_state_resume:
+            raise SystemExit("missing state did not stay fail-closed for Codex resume")
+        state.write_text(normal_state, encoding="utf-8")
+        invalid_states = (
+            normal_state.replace("stage: 1", "stage: 99"),
+            normal_state.replace("gate_status: PENDING", "gate_status: UNKNOWN"),
+            normal_state.replace("stage_type: GATED", "stage_type: EXECUTION_LOOP"),
+            normal_state.replace("updated_by: coordinator", "unexpected_state_field: true\nupdated_by: coordinator"),
+            normal_state.replace("revision: 1", "revision: 1\nrevision: 2"),
+        )
+        for invalid_state in invalid_states:
+            state.write_text(invalid_state, encoding="utf-8")
+            invalid_status = run_python_expect_failure_capture("aps.py", "status", str(project))
+            invalid_resume = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
+            if "Runtime state" not in invalid_status or "NORMAL" in invalid_status or "APS Agent Handoff" in invalid_resume:
+                raise SystemExit("malformed state was treated as a normal resumable state")
+        state.write_bytes(b"\xff\xfe\xfd")
+        invalid_encoding_status = run_python_expect_failure_capture("aps.py", "status", str(project))
+        invalid_encoding_resume = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
+        if "Runtime state" not in invalid_encoding_status or "doctor --standard-only" not in invalid_encoding_status or "APS Agent Handoff" in invalid_encoding_resume:
+            raise SystemExit("non-UTF8 state was not rejected with the state recovery path")
+        state.write_text(normal_state, encoding="utf-8")
         state.write_text(normal_state.replace("stage: 1", "stage: 17").replace("stage_type: GATED", "stage_type: EXECUTION_LOOP").replace("gate_status: PENDING", "gate_status: null"), encoding="utf-8")
         normal_status = run_python_capture("aps.py", "status", str(project))
         if "Mode gate: NORMAL (Plan mode not required)" not in normal_status:
@@ -420,18 +533,29 @@ def main() -> int:
             raise SystemExit("same-version upgrade changed the governed project")
 
         managed = project / ".ai" / "standards" / "lifecycle.md"
+        expected = ROOT / "src" / "aps_cli" / "bundle" / "package" / "standards" / "lifecycle.md"
         managed.write_bytes(managed.read_bytes() + b"\nlocal smoke edit\n")
         run_python("aps.py", "upgrade", str(project), "--host", "generic")
         incoming = list((project / ".ai" / "incoming").rglob("lifecycle.md"))
         if not incoming:
             raise SystemExit("upgrade did not preserve a locally modified managed file")
+        conflict_status = run_python_expect_failure_capture("aps.py", "status", str(project))
+        conflict_resume = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
+        if "未解决" not in conflict_status or "aps upgrade" not in conflict_status or "APS Agent Handoff" in conflict_resume:
+            raise SystemExit("managed conflict did not block status/resume recovery")
+        managed.write_bytes(expected.read_bytes())
+        run_python("aps.py", "upgrade", str(project), "--host", "generic")
+        merged_status = run_python_capture("aps.py", "status", str(project))
+        if "Managed conflicts: 0" not in merged_status:
+            raise SystemExit("manual managed-file merge did not clear the conflict")
+        managed.write_bytes(managed.read_bytes() + b"\nlocal smoke edit again\n")
+        run_python("aps.py", "upgrade", str(project), "--host", "generic")
         before_repeat_conflict = snapshot_files(project)
         run_python("aps.py", "upgrade", str(project), "--host", "generic")
         if snapshot_files(project) != before_repeat_conflict:
             raise SystemExit("repeated conflict upgrade changed the project")
 
         run_python("aps.py", "upgrade", str(project), "--host", "generic", "--force-managed")
-        expected = ROOT / "src" / "aps_cli" / "bundle" / "package" / "standards" / "lifecycle.md"
         if managed.read_bytes() != expected.read_bytes():
             raise SystemExit("force-managed upgrade did not install the bundled file")
         backups = snapshot_files(project / ".ai" / "archive" / "install-backups")
@@ -441,11 +565,132 @@ def main() -> int:
         if snapshot_files(project / ".ai" / "archive" / "install-backups") != backups:
             raise SystemExit("repeated force-managed upgrade created duplicate backups")
 
+        collision = temp / "collision-project"
+        (collision / ".ai" / "standards").mkdir(parents=True)
+        (collision / ".ai" / "standards" / "lifecycle.md").write_bytes(expected.read_bytes())
+        (collision / "AGENTS.md").mkdir()
+        collision_before = snapshot_files(collision)
+        collision_output = run_python_expect_failure_capture("aps.py", "upgrade", str(collision), "--host", "generic")
+        if "项目边界不安全" not in collision_output or snapshot_files(collision) != collision_before:
+            raise SystemExit("directory collision did not fail before modifying the project")
+
+        transaction_project = temp / "transaction-project"
+        run_python("aps.py", "init", str(transaction_project), "--host", "generic", "--no-launch", "--no-git")
+        transaction_files = [
+            transaction_project / ".ai" / "standards" / "lifecycle.md",
+            transaction_project / ".ai" / "standards" / "artifact-state.md",
+        ]
+        for path in transaction_files:
+            path.unlink()
+        transaction_before = snapshot_files(transaction_project)
+        sys.path.insert(0, str(ROOT / "src"))
+        from aps_cli import installer as installer_module
+
+        original_copy_file_atomic = installer_module.copy_file_atomic
+        copy_calls = {"count": 0}
+
+        def fail_on_second_copy(source: Path, destination: Path) -> None:
+            copy_calls["count"] += 1
+            if copy_calls["count"] == 2:
+                raise RuntimeError("simulated commit failure")
+            original_copy_file_atomic(source, destination)
+
+        installer_module.copy_file_atomic = fail_on_second_copy
+        try:
+            try:
+                installer_module.install_standard(ROOT / "src" / "aps_cli" / "bundle", transaction_project, host="generic", quiet=True)
+            except RuntimeError as exc:
+                if "simulated commit failure" not in str(exc):
+                    raise
+            else:
+                raise SystemExit("simulated installer commit failure did not fail")
+        finally:
+            installer_module.copy_file_atomic = original_copy_file_atomic
+        if copy_calls["count"] < 2 or snapshot_files(transaction_project) != transaction_before:
+            raise SystemExit("installer commit failure did not fully roll back")
+
+        unsafe_bundle = temp / "unsafe-bundle"
+        shutil.copytree(ROOT / "src" / "aps_cli" / "bundle", unsafe_bundle)
+        unsafe_manifest_path = unsafe_bundle / "package-manifest.json"
+        unsafe_manifest = json.loads(unsafe_manifest_path.read_text(encoding="utf-8"))
+        unsafe_manifest["version"] = "../1.2.2"
+        unsafe_manifest_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
+        try:
+            installer_module.validate_bundle(unsafe_bundle)
+        except RuntimeError:
+            pass
+        else:
+            raise SystemExit("unsafe bundle version was accepted")
+
+        unsafe_bundle_path = temp / "unsafe-bundle-path"
+        shutil.copytree(ROOT / "src" / "aps_cli" / "bundle", unsafe_bundle_path)
+        unsafe_path_manifest_path = unsafe_bundle_path / "package-manifest.json"
+        unsafe_path_manifest = json.loads(unsafe_path_manifest_path.read_text(encoding="utf-8"))
+        unsafe_path_manifest["payload_sha256"]["../escape.txt"] = "0" * 64
+        unsafe_path_manifest_path.write_text(json.dumps(unsafe_path_manifest), encoding="utf-8")
+        try:
+            installer_module.validate_bundle(unsafe_bundle_path)
+        except RuntimeError:
+            pass
+        else:
+            raise SystemExit("unsafe bundle payload path was accepted")
+
+        malicious_zip = temp / "malicious.zip"
+        with zipfile.ZipFile(malicious_zip, "w") as archive_file:
+            archive_file.writestr("../escape.txt", "must not extract")
+        try:
+            safe_extract_zip(malicious_zip, temp / "malicious-extract")
+        except ValueError:
+            pass
+        else:
+            raise SystemExit("ZIP path traversal was accepted")
+        if "Test-SafeZip" not in (ROOT / "install.ps1").read_text(encoding="utf-8") or "extractall" in (ROOT / "install.sh").read_text(encoding="utf-8"):
+            raise SystemExit("online installer ZIP safety boundary is missing")
+
+        symlink_bundle = temp / "symlink-bundle"
+        try:
+            shutil.copytree(ROOT / "src" / "aps_cli" / "bundle", symlink_bundle)
+            symlink_payload = symlink_bundle / "package" / "standards" / "lifecycle.md"
+            symlink_payload.unlink()
+            symlink_payload.symlink_to(symlink_bundle / "package" / "standards" / "artifact-state.md")
+        except (OSError, NotImplementedError):
+            print("WARN  当前环境不允许创建 symlink，跳过 symlink smoke")
+        else:
+            try:
+                installer_module.validate_bundle(symlink_bundle)
+            except RuntimeError:
+                pass
+            else:
+                raise SystemExit("symlink bundle payload was accepted")
+
+        linked_project = temp / "linked-project"
+        try:
+            linked_project.symlink_to(project, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            print("WARN  当前环境不允许创建项目 symlink，跳过 project boundary smoke")
+        else:
+            linked_status = run_python_expect_failure_capture("aps.py", "status", str(linked_project))
+            if "项目边界不安全" not in linked_status:
+                raise SystemExit("project symlink was followed by status")
+
+        pseudo_research = research_dir / "PSEUDO_KEYWORDS.md"
+        pseudo_research.write_text(
+            """# Pseudo\n\n## Research Brief\n\n正文提到 Question、Method、Key Findings、Conclusion、Uncertainty 和 Pending Decisions，引用中也出现这些词。\n""",
+            encoding="utf-8",
+        )
+        pseudo_output = run_python_expect_failure_capture("aps.py", "research", "brief", str(pseudo_research), str(project))
+        if "Research Brief is missing" not in pseudo_output or "研究问题 / 范围" not in pseudo_output:
+            raise SystemExit("Research Brief pseudo-keyword content was accepted")
+
+        cp1252_status = run_python_capture_env({"PYTHONIOENCODING": "cp1252"}, "aps.py", "status", str(project))
+        if "Project:" not in cp1252_status or "Managed conflicts: 0" not in cp1252_status:
+            raise SystemExit("cp1252 environment did not produce stable UTF-8 CLI output")
+
         run_python("scripts/build_release.py", "--refresh-manifest")
         archive = next((ROOT / "dist").glob("APS_CLI_*.zip"))
         extracted = temp / "release"
         with zipfile.ZipFile(archive) as bundle:
-            bundle.extractall(extracted)
+            safe_extract_zip(archive, extracted)
         installer = next(extracted.rglob("install_cli.py"))
         prefix = temp / "prefix"
         run_python(str(installer), "--prefix", str(prefix), cwd=extracted)
