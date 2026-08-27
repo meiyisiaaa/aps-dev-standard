@@ -481,7 +481,7 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
             if yaml:
                 data = yaml.safe_load(state.read_text(encoding="utf-8")) or {}
             else:
-                data = {m.group(1): m.group(2) for m in re.finditer(r"(?m)^([a-zA-Z_]+):\s*(.*)$", state.read_text())}
+                data = {m.group(1): m.group(2) for m in re.finditer(r"(?m)^([a-zA-Z_]+):\s*(.*)$", state.read_text(encoding="utf-8"))}
             required = {"schema_version", "standard_version", "revision", "cycle", "stage", "stage_type", "stage_status", "gate_status"}
             missing = required - set(data)
             if missing:

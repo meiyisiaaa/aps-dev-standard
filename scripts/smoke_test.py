@@ -333,7 +333,7 @@ def main() -> int:
 
         manifest = project / ".ai" / "standard-manifest.json"
         manifest_before = manifest.read_bytes()
-        manifest.write_text(manifest.read_text(encoding="utf-8").replace('"version": "1.3.0"', '"version": "0.0.0"'), encoding="utf-8")
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace('"version": "1.3.1"', '"version": "0.0.0"'), encoding="utf-8")
         mismatch_output = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
         if "REFUSE" not in mismatch_output or "aps upgrade" not in mismatch_output:
             raise SystemExit("version mismatch resume did not provide recovery guidance")
@@ -377,6 +377,23 @@ def main() -> int:
             (project / ".ai" / "templates" / "registry.yaml").read_text(encoding="utf-8"),
             encoding="utf-8",
         )
+        (project / ".ai" / "decisions.md").write_text(
+            (project / ".ai" / "templates" / "decisions.md").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        state_before_chinese = state.read_bytes()
+        state.write_text(state.read_text(encoding="utf-8").replace("updated_by: coordinator", "updated_by: 协调器"), encoding="utf-8")
+        utf8_fallback_lint = run_python_capture_env(
+            {"PYTHONUTF8": "0"},
+            "src/aps_cli/bundle/package/tools/standards-lint.py",
+            "--project-root",
+            str(project),
+            "--host",
+            "generic",
+        )
+        if "state.yaml has required governance keys" not in utf8_fallback_lint:
+            raise SystemExit("UTF-8 fallback did not validate a Chinese state.yaml")
+        state.write_bytes(state_before_chinese)
         before_menu_cancel = snapshot_files(project)
         menu_output = run_python_with_input("3\nn\n", str(ROOT / "aps.py"), cwd=project)
         if "已取消 rebaseline" not in menu_output or snapshot_files(project) != before_menu_cancel:
@@ -514,7 +531,7 @@ def main() -> int:
         registry_before = registry.read_bytes()
         registry.write_text(
             """schema_version: 1
-standard_version: "1.3.0"
+standard_version: "1.3.1"
 revision: 1
 sources:
   broken_source:
@@ -544,7 +561,7 @@ critical_skills: {}
         registry.write_bytes(registry_before)
         registry.write_text(
             """schema_version: 1
-standard_version: "1.3.0"
+standard_version: "1.3.1"
 revision: 1
 revision: 2
 sources:
@@ -912,7 +929,7 @@ critical_skills: {}
         shutil.copytree(ROOT / "src" / "aps_cli" / "bundle", unsafe_bundle)
         unsafe_manifest_path = unsafe_bundle / "package-manifest.json"
         unsafe_manifest = json.loads(unsafe_manifest_path.read_text(encoding="utf-8"))
-        unsafe_manifest["version"] = "../1.3.0"
+        unsafe_manifest["version"] = "../1.3.1"
         unsafe_manifest_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
         try:
             installer_module.validate_bundle(unsafe_bundle)

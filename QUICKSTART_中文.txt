@@ -12,8 +12,8 @@ git diff --cached --check
 git commit -m "Configure APS distribution"
 git push
 
-git tag v1.3.0
-git push origin v1.3.0
+git tag v1.3.1
+git push origin v1.3.1
 
 之后任何机器：
 

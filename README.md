@@ -19,8 +19,8 @@ git push
 Then tag a release:
 
 ```bash
-git tag v1.3.0
-git push origin v1.3.0
+git tag v1.3.1
+git push origin v1.3.1
 ```
 
 When changing files under `src/aps_cli/bundle/package/`, refresh their manifest checksums before committing:
@@ -29,7 +29,7 @@ When changing files under `src/aps_cli/bundle/package/`, refresh their manifest 
 python scripts/build_release.py --refresh-manifest
 ```
 
-GitHub Actions builds `APS_CLI_1.3.0.zip` and its SHA-256 file and attaches them to the Release.
+GitHub Actions builds `APS_CLI_1.3.1.zip` and its SHA-256 file and attaches them to the Release.
 The online installers verify that SHA-256 file and fail closed when no verified Release asset is available.
 
 ## One-line install
