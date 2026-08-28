@@ -14,6 +14,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+CLI_VERSION = next(
+    line.split("=", 1)[1].strip()
+    for line in (ROOT / "VERSION").read_text(encoding="utf-8").splitlines()
+    if line.startswith("APS_CLI=")
+)
 
 
 def configure_stdio() -> None:
@@ -342,7 +347,7 @@ def main() -> int:
 
         manifest = project / ".ai" / "standard-manifest.json"
         manifest_before = manifest.read_bytes()
-        manifest.write_text(manifest.read_text(encoding="utf-8").replace('"version": "1.3.3"', '"version": "0.0.0"'), encoding="utf-8")
+        manifest.write_text(manifest.read_text(encoding="utf-8").replace(f'"version": "{CLI_VERSION}"', '"version": "0.0.0"'), encoding="utf-8")
         mismatch_output = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
         if "REFUSE" not in mismatch_output or "aps upgrade" not in mismatch_output:
             raise SystemExit("version mismatch resume did not provide recovery guidance")
@@ -582,7 +587,7 @@ def main() -> int:
         registry_before = registry.read_bytes()
         registry.write_text(
             """schema_version: 1
-standard_version: "1.3.3"
+standard_version: "__CLI_VERSION__"
 revision: 1
 sources:
   broken_source:
@@ -593,7 +598,7 @@ sources:
 artifacts: {}
 dependencies: {}
 critical_skills: {}
-""",
+""".replace("__CLI_VERSION__", CLI_VERSION),
             encoding="utf-8",
         )
         bad_registry_doctor = run_python_expect_failure_capture("aps.py", "doctor", str(project), "--host", "generic", "--standard-only")
@@ -612,7 +617,7 @@ critical_skills: {}
         registry.write_bytes(registry_before)
         registry.write_text(
             """schema_version: 1
-standard_version: "1.3.3"
+standard_version: "__CLI_VERSION__"
 revision: 1
 revision: 2
 sources:
@@ -624,7 +629,7 @@ sources:
 artifacts: {}
 dependencies: {}
 critical_skills: {}
-""",
+""".replace("__CLI_VERSION__", CLI_VERSION),
             encoding="utf-8",
         )
         duplicate_registry = run_python_expect_failure_capture("aps.py", "status", str(project))
@@ -980,7 +985,7 @@ critical_skills: {}
         shutil.copytree(ROOT / "src" / "aps_cli" / "bundle", unsafe_bundle)
         unsafe_manifest_path = unsafe_bundle / "package-manifest.json"
         unsafe_manifest = json.loads(unsafe_manifest_path.read_text(encoding="utf-8"))
-        unsafe_manifest["version"] = "../1.3.3"
+        unsafe_manifest["version"] = f"../{CLI_VERSION}"
         unsafe_manifest_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
         try:
             installer_module.validate_bundle(unsafe_bundle)
@@ -1070,8 +1075,7 @@ critical_skills: {}
             raise SystemExit("cp1252 environment did not produce stable UTF-8 CLI output")
 
         run_python("scripts/build_release.py", "--refresh-manifest")
-        release_version = next(line.split("=", 1)[1].strip() for line in (ROOT / "VERSION").read_text(encoding="utf-8").splitlines() if line.startswith("APS_CLI="))
-        archive = ROOT / "dist" / f"APS_CLI_{release_version}.zip"
+        archive = ROOT / "dist" / f"APS_CLI_{CLI_VERSION}.zip"
         with zipfile.ZipFile(archive) as release_zip:
             names = {name.split("/", 1)[1] for name in release_zip.namelist() if "/" in name}
         allowed = {
