@@ -1,0 +1,44 @@
+{
+  "NORMAL": [
+    "lint",
+    "build",
+    "functional_qa",
+    "rollback"
+  ],
+  "LARGE": [
+    "lint",
+    "typecheck",
+    "unit",
+    "integration",
+    "e2e",
+    "performance",
+    "migration",
+    "security",
+    "functional_qa",
+    "monitoring",
+    "rollback",
+    "disaster_recovery",
+    "on_call",
+    "external_acceptance"
+  ],
+  "REGULATED": [
+    "lint",
+    "typecheck",
+    "unit",
+    "integration",
+    "e2e",
+    "performance",
+    "migration",
+    "security",
+    "privacy_compliance",
+    "traceability",
+    "security_approval",
+    "functional_qa",
+    "monitoring",
+    "rollback",
+    "audit_retention",
+    "disaster_recovery",
+    "on_call",
+    "external_acceptance"
+  ]
+}

@@ -62,6 +62,25 @@ class Report:
         return 1 if self.errors else 0
 
 
+def load_profile_release_checks(report: Report) -> dict[str, set[str]]:
+    path = Path(__file__).with_name("release-requirements.json")
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        report.error(f"release requirements are unavailable: {exc}")
+        return {}
+    if not isinstance(raw, dict) or set(raw) != {"NORMAL", "LARGE", "REGULATED"}:
+        report.error("release requirements must define NORMAL, LARGE, and REGULATED")
+        return {}
+    checks: dict[str, set[str]] = {}
+    for profile, values in raw.items():
+        if not isinstance(values, list) or not values or any(not isinstance(value, str) or not value.strip() for value in values):
+            report.error(f"release requirements for {profile} are invalid")
+            return {}
+        checks[profile] = set(values)
+    return checks
+
+
 def read(path: Path, report: Report) -> str:
     if not path.is_file():
         report.error(f"missing file: {path}")
@@ -306,14 +325,10 @@ def scan_skills(root: Path, cwd: Path) -> dict[str, list[tuple[str, Path]]]:
     return out
 
 
-PROFILE_RELEASE_CHECKS = {
-    "NORMAL": {"lint", "build", "functional_qa", "rollback"},
-    "LARGE": {"lint", "typecheck", "unit", "integration", "e2e", "performance", "migration", "security", "functional_qa", "monitoring", "rollback", "disaster_recovery", "on_call", "external_acceptance"},
-    "REGULATED": {"lint", "typecheck", "unit", "integration", "e2e", "performance", "migration", "security", "privacy_compliance", "traceability", "security_approval", "functional_qa", "monitoring", "rollback", "audit_retention", "disaster_recovery", "on_call", "external_acceptance"},
-}
-
-
 def validate_project_governance(root: Path, state: dict, report: Report) -> None:
+    profile_release_checks = load_profile_release_checks(report)
+    if not profile_release_checks:
+        return
     profile_path = root / ".ai" / "project-profile.json"
     if not profile_path.is_file():
         report.error("missing project governance profile: .ai/project-profile.json")
@@ -323,7 +338,7 @@ def validate_project_governance(root: Path, state: dict, report: Report) -> None
         if not isinstance(profile, dict):
             raise ValueError("profile must be a JSON object")
         risk = profile.get("risk_profile")
-        if risk not in PROFILE_RELEASE_CHECKS:
+        if risk not in profile_release_checks:
             raise ValueError(f"invalid risk_profile: {risk}")
         if profile.get("schema_version") != 1:
             raise ValueError("profile schema_version must be 1")
@@ -381,7 +396,7 @@ def validate_project_governance(root: Path, state: dict, report: Report) -> None
             try:
                 readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
                 checks = readiness.get("checks", {}) if isinstance(readiness, dict) else {}
-                missing = sorted(check for check in PROFILE_RELEASE_CHECKS[risk] if not isinstance(checks.get(check), dict) or checks[check].get("status") != "PASS")
+                missing = sorted(check for check in profile_release_checks[risk] if not isinstance(checks.get(check), dict) or checks[check].get("status") != "PASS")
                 if readiness.get("profile") != risk or readiness.get("status") not in {"READY", "RELEASED"}:
                     report.error("release readiness profile/status is not ready")
                 elif missing:
@@ -481,13 +496,17 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
             if yaml:
                 data = yaml.safe_load(state.read_text(encoding="utf-8")) or {}
             else:
+                report.warn("PyYAML unavailable; state.yaml fallback validation is advisory and does not replace APS CLI strict validation")
                 data = {m.group(1): m.group(2) for m in re.finditer(r"(?m)^([a-zA-Z_]+):\s*(.*)$", state.read_text(encoding="utf-8"))}
             required = {"schema_version", "standard_version", "revision", "cycle", "stage", "stage_type", "stage_status", "gate_status"}
             missing = required - set(data)
             if missing:
                 report.error(f"state.yaml missing keys: {sorted(missing)}")
             else:
-                report.pass_("state.yaml has required governance keys")
+                if yaml:
+                    report.pass_("state.yaml has required governance keys")
+                else:
+                    report.warn("state.yaml has required governance keys (advisory fallback parser)")
             gate_raw = data.get("gate_status")
             stage_type = str(data.get("stage_type", ""))
             stage_status = str(data.get("stage_status", ""))

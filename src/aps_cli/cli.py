@@ -275,8 +275,20 @@ def read_runtime_state(root: Path) -> dict:
 
 
 def ensure_git(root: Path, enabled: bool = True) -> None:
-    if not enabled or (root / ".git").exists():
+    if not enabled:
         return
+    current = root
+    while True:
+        git_marker = current / ".git"
+        if git_marker.exists() or git_marker.is_symlink():
+            if current != root:
+                print(f"OK    检测到父级 Git 仓库，跳过嵌套初始化：{current}")
+            return
+        if has_aps_artifacts(current):
+            return
+        if current.parent == current:
+            break
+        current = current.parent
     git = shutil.which("git")
     if not git:
         print("WARN  未找到 git，已跳过 Git 初始化。")
@@ -310,12 +322,13 @@ GOVERNANCE_CAUSES = {
 }
 
 GOVERNANCE_NEXT_ACTIONS = {
-    "registry": "在 Host 中按 `.ai/templates/registry.yaml` 修复 `.ai/registry.yaml`，再运行 `aps doctor --standard-only`。",
-    "project_profile": "在 Host 中按 `.ai/templates/project-profile.json` 创建或修复 `.ai/project-profile.json`，再运行 `aps doctor`。",
-    "transition_audit": "在 Host 中人工修复或补齐 `.ai/audit/transitions.jsonl`，使最后一条记录与 `.ai/state.yaml` 一致，再运行 `aps doctor`。",
-    "release_readiness": "在 Host 中按 `.ai/templates/release-readiness.json` 补齐 `.ai/release-readiness.json`，再运行 `aps doctor`。",
+    "registry": "在 Host 中按 `.ai/templates/registry.yaml` 修复 `.ai/registry.yaml`，再运行 `{doctor_command}`。",
+    "project_profile": "在 Host 中按 `.ai/templates/project-profile.json` 创建或修复 `.ai/project-profile.json`，再运行 `{doctor_command}`。",
+    "transition_audit": "在 Host 中人工修复或补齐 `.ai/audit/transitions.jsonl`，使最后一条记录与 `.ai/state.yaml` 一致，再运行 `{doctor_command}`。",
+    "release_readiness": "在 Host 中按 `.ai/templates/release-readiness.json` 补齐 `.ai/release-readiness.json`，再运行 `{doctor_command}`。",
     "prd_snapshot": "在 Host 中更新当前 Cycle 的 `08_PRD_SNAPSHOT.md`，补齐最新 Source State Revision 和来源引用，再运行 `aps status`。",
 }
+DEFAULT_GOVERNANCE_NEXT_ACTION = "运行 `{doctor_command}`，按第一项治理问题人工修复后再运行 `aps status`。"
 
 
 def governance_diagnostic(
@@ -326,12 +339,8 @@ def governance_diagnostic(
     marker: str = "FAIL",
 ) -> Diagnostic:
     cause = GOVERNANCE_CAUSES.get(problem.code, "项目治理校验未通过，APS 不会猜测或绕过当前状态。")
-    next_action = action or GOVERNANCE_NEXT_ACTIONS.get(
-        problem.code,
-        "运行 `aps doctor --standard-only`，按第一项治理问题人工修复后再运行 `aps status`。",
-    )
-    if standard_only and action is None and problem.code != "prd_snapshot":
-        next_action = next_action.replace("aps doctor`", "aps doctor --standard-only`").replace("aps doctor。", "aps doctor --standard-only。")
+    doctor_command = "aps doctor --standard-only" if standard_only else "aps doctor"
+    next_action = action or GOVERNANCE_NEXT_ACTIONS.get(problem.code, DEFAULT_GOVERNANCE_NEXT_ACTION).format(doctor_command=doctor_command)
     detail = problem.message
     if problem.path and problem.path not in detail:
         detail = f"{detail}（路径：{problem.path}）"

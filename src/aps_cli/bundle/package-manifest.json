@@ -8,6 +8,7 @@
     ".ai/bootstrap/bootstrap-prompt.txt",
     ".ai/bootstrap/rebaseline-existing-project.txt",
     ".ai/tools/standards-lint.py",
+    ".ai/tools/release-requirements.json",
     ".ai/schemas/state.schema.json",
     ".ai/schemas/registry.schema.json",
     ".ai/schemas/decision-request.schema.json",
@@ -52,6 +53,7 @@
     "templates/runtime-host.yaml": "0c67ce3ad3987734a94ceeafcdb3729d051e05a582f89e3611c8920a58007c47",
     "templates/state.yaml": "b6b4a073ac50574d1a1646f410ffd6b4a79e3df9bb23697b704a91cae34f03af",
     "templates/transition-record.json": "eef99e0de7d709fe9882914aac60d7a05b01e710d427f84c978c509316862696",
-    "tools/standards-lint.py": "1d061f681d6600d80de7e62b60c7e3f8d112e2be6ef0e9c353e3d54ea7f7375f"
+    "tools/release-requirements.json": "71175abaa149732f0a52fa8abb6dfcd74d301cfa1b48d412577ee65c646cec1a",
+    "tools/standards-lint.py": "189f50c339813d892f62303d9293b59f3d4b31004533f3dff83f8972083afa1c"
   }
 }

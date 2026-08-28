@@ -260,8 +260,17 @@ def run_launcher(launcher: Path, args: list[str]) -> None:
 
 def main() -> int:
     configure_stdio()
+    from aps_cli.governance import PROFILE_RELEASE_CHECKS
+
     with tempfile.TemporaryDirectory(prefix="aps-smoke-") as raw_temp:
         temp = Path(raw_temp)
+        release_requirements = json.loads(
+            (ROOT / "src" / "aps_cli" / "bundle" / "package" / "tools" / "release-requirements.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        if PROFILE_RELEASE_CHECKS != {key: tuple(value) for key, value in release_requirements.items()}:
+            raise SystemExit("governance and bundled release requirements have drifted")
         help_output = run_python_capture("aps.py", "--help")
         if "典型路径" not in help_output or "aps decision request" not in help_output or "aps research brief" not in help_output:
             raise SystemExit("CLI help does not include Chinese scenarios and decision/research paths")
@@ -418,6 +427,11 @@ def main() -> int:
         )
         if "state.yaml has required governance keys" not in utf8_fallback_lint:
             raise SystemExit("UTF-8 fallback did not validate a Chinese state.yaml")
+        try:
+            import yaml  # type: ignore  # noqa: F401
+        except Exception:
+            if "fallback validation is advisory" not in utf8_fallback_lint:
+                raise SystemExit("UTF-8 fallback did not identify advisory state validation")
         state.write_bytes(state_before_chinese)
         before_menu_cancel = snapshot_files(project)
         menu_output = run_python_with_input("3\nn\n", str(ROOT / "aps.py"), cwd=project)
@@ -1099,7 +1113,9 @@ critical_skills: {}
         monorepo.mkdir()
         run(["git", "init"], cwd=monorepo)
         monorepo_project = monorepo / "project"
-        run_python("aps.py", "init", str(monorepo_project), "--host", "generic", "--no-launch", "--no-git")
+        run_python("aps.py", "init", str(monorepo_project), "--host", "generic", "--no-launch")
+        if (monorepo_project / ".git").exists() or (monorepo_project / ".git").is_symlink():
+            raise SystemExit("init created a nested Git repository inside an existing monorepo")
         (monorepo_project / ".ai" / "state.yaml").write_text(
             (monorepo_project / ".ai" / "templates" / "state.yaml").read_text(encoding="utf-8"),
             encoding="utf-8",

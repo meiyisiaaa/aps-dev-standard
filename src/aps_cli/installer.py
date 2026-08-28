@@ -16,6 +16,7 @@ END_AGENTS = "<!-- AI-PROJECT-STANDARD:END -->"
 BEGIN_GITIGNORE = "# >>> AI PROJECT STANDARD >>>"
 END_GITIGNORE = "# <<< AI PROJECT STANDARD <<<"
 VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$")
+STANDARD_VERSION_RE = re.compile(r"^1\.(?:1|2|3)\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
 SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
@@ -47,10 +48,6 @@ def is_reparse_point(path: Path) -> bool:
     return False
 
 
-def _is_reparse_point(path: Path) -> bool:
-    return is_reparse_point(path)
-
-
 def assert_no_reparse(path: Path, *, allow_ancestor_links: bool = False) -> None:
     first = True
     current = path
@@ -61,10 +58,6 @@ def assert_no_reparse(path: Path, *, allow_ancestor_links: bool = False) -> None
             return
         current = current.parent
         first = False
-
-
-def _assert_no_reparse(path: Path) -> None:
-    assert_no_reparse(path)
 
 
 def _validate_relative_path(value: object, label: str) -> Path:
@@ -81,7 +74,7 @@ def _validate_relative_path(value: object, label: str) -> Path:
 
 def _validate_target(root: Path, relative: str, label: str) -> Path:
     path = root / _validate_relative_path(relative, label)
-    _assert_no_reparse(path)
+    assert_no_reparse(path)
     if path.exists() and not path.is_file():
         raise RuntimeError(f"{label} 目标不是普通文件：{path}")
     return path
@@ -89,7 +82,7 @@ def _validate_target(root: Path, relative: str, label: str) -> Path:
 
 def _validate_directory(root: Path, relative: str) -> Path:
     path = root / _validate_relative_path(relative, "安装目录")
-    _assert_no_reparse(path)
+    assert_no_reparse(path)
     if path.exists() and not path.is_dir():
         raise RuntimeError(f"安装目录目标不是目录：{path}")
     return path
@@ -106,7 +99,7 @@ def load_json(path: Path) -> dict:
 
 
 def atomic_write(path: Path, data: bytes) -> None:
-    _assert_no_reparse(path)
+    assert_no_reparse(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
@@ -136,7 +129,7 @@ def write_json_if_changed(path: Path, data: dict) -> bool:
 def backup_file(root: Path, path: Path) -> Path | None:
     if not path.exists():
         return None
-    _assert_no_reparse(path)
+    assert_no_reparse(path)
     try:
         rel = path.relative_to(root)
     except ValueError:
@@ -144,7 +137,7 @@ def backup_file(root: Path, path: Path) -> Path | None:
     backup_rel = Path(*rel.parts[1:]) if rel.parts and rel.parts[0] == ".ai" else rel
     content_hash = sha256(path)
     dst = root / ".ai" / "archive" / "install-backups" / content_hash / backup_rel
-    _assert_no_reparse(dst)
+    assert_no_reparse(dst)
     if dst.exists():
         if dst.is_file() and sha256(dst) == content_hash:
             return None
@@ -155,10 +148,10 @@ def backup_file(root: Path, path: Path) -> Path | None:
 
 
 def copy_file_atomic(src: Path, dst: Path) -> None:
-    _assert_no_reparse(src)
+    assert_no_reparse(src)
     if not src.is_file():
         raise RuntimeError(f"安装源不是普通文件：{src}")
-    _assert_no_reparse(dst)
+    assert_no_reparse(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
@@ -223,11 +216,11 @@ def update_marked_block(path: Path, begin: str, end: str, block: str, root: Path
 def validate_bundle(bundle: Path) -> tuple[str, dict[str, str]]:
     """Validate the embedded Standard and return its version and install mapping."""
     bundle = bundle.expanduser()
-    _assert_no_reparse(bundle)
+    assert_no_reparse(bundle)
     manifest_path = bundle / "package-manifest.json"
     payload = bundle / "package"
-    _assert_no_reparse(manifest_path)
-    _assert_no_reparse(payload)
+    assert_no_reparse(manifest_path)
+    assert_no_reparse(payload)
     manifest_src = load_json(manifest_path)
     version = manifest_src.get("version")
     if (
@@ -250,7 +243,7 @@ def validate_bundle(bundle: Path) -> tuple[str, dict[str, str]]:
         if not isinstance(expected, str) or not SHA256_RE.fullmatch(expected):
             raise RuntimeError(f"package manifest contains invalid checksum: {rel}")
         src = payload / relative
-        _assert_no_reparse(src)
+        assert_no_reparse(src)
         if not src.is_file() or sha256(src) != expected:
             raise RuntimeError(f"package integrity check failed: {rel}")
 
@@ -278,7 +271,7 @@ def validate_bundle(bundle: Path) -> tuple[str, dict[str, str]]:
 @contextmanager
 def install_lock(root: Path):
     lock_path = root / ".ai" / ".install.lock"
-    _assert_no_reparse(lock_path)
+    assert_no_reparse(lock_path)
     lock_existed = lock_path.exists()
     ai_existed = lock_path.parent.exists()
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -347,7 +340,7 @@ def install_standard(bundle: Path, root: Path, host: str = "codex", force_manage
     root.mkdir(parents=True, exist_ok=True)
     if not root.is_dir():
         raise RuntimeError(f"project path is not a directory: {root}")
-    _assert_no_reparse(root)
+    assert_no_reparse(root)
 
     with install_lock(root):
         old_manifest_path = root / ".ai" / "standard-manifest.json"
@@ -371,8 +364,8 @@ def install_standard(bundle: Path, root: Path, host: str = "codex", force_manage
         ignore_path = root / ".gitignore"
         agents_block_path = payload / "templates" / "AGENTS.block.md"
         ignore_fragment_path = payload / "gitignore.fragment"
-        _assert_no_reparse(agents_block_path)
-        _assert_no_reparse(ignore_fragment_path)
+        assert_no_reparse(agents_block_path)
+        assert_no_reparse(ignore_fragment_path)
         if not agents_block_path.is_file() or not ignore_fragment_path.is_file():
             raise RuntimeError("installer payload is missing marker content")
         agents_block = agents_block_path.read_text(encoding="utf-8")
@@ -417,7 +410,7 @@ def install_standard(bundle: Path, root: Path, host: str = "codex", force_manage
                     continue
                 incoming_rel = Path(*Path(dst_rel).parts[1:])
                 incoming_dst = root / ".ai" / "incoming" / version / incoming_rel
-                _assert_no_reparse(incoming_dst)
+                assert_no_reparse(incoming_dst)
                 if incoming_dst.exists() and not incoming_dst.is_file():
                     raise RuntimeError(f"incoming 目标不是普通文件：{incoming_dst}")
                 if not incoming_dst.is_file() or sha256(incoming_dst) != src_hash:
@@ -449,10 +442,10 @@ def install_standard(bundle: Path, root: Path, host: str = "codex", force_manage
             for path in tuple(snapshot_paths):
                 if path.exists() and not path.is_file():
                     raise RuntimeError(f"安装提交目标不是普通文件：{path}")
-                _assert_no_reparse(path)
+                assert_no_reparse(path)
                 backup = _backup_destination(root, path)
                 if backup is not None:
-                    _assert_no_reparse(backup)
+                    assert_no_reparse(backup)
                     if backup.exists() and not backup.is_file():
                         raise RuntimeError(f"备份目标不是普通文件：{backup}")
                     snapshot_paths.add(backup)
@@ -469,7 +462,7 @@ def install_standard(bundle: Path, root: Path, host: str = "codex", force_manage
             created_dirs: list[Path] = []
 
             def ensure_dir(path: Path) -> None:
-                _assert_no_reparse(path)
+                assert_no_reparse(path)
                 if path.exists():
                     if not path.is_dir():
                         raise RuntimeError(f"安装目录目标不是目录：{path}")
@@ -481,7 +474,7 @@ def install_standard(bundle: Path, root: Path, host: str = "codex", force_manage
                     if current.parent == current:
                         break
                     current = current.parent
-                _assert_no_reparse(current)
+                assert_no_reparse(current)
                 for directory in reversed(missing_dirs):
                     directory.mkdir()
                     created_dirs.append(directory)
@@ -492,7 +485,7 @@ def install_standard(bundle: Path, root: Path, host: str = "codex", force_manage
             def restore_snapshot(path: Path, snapshot: tuple[bytes, int] | None) -> None:
                 if snapshot is None:
                     if path.exists() or path.is_symlink():
-                        _assert_no_reparse(path)
+                        assert_no_reparse(path)
                         path.unlink()
                     return
                 data, mode = snapshot
@@ -543,7 +536,7 @@ def install_standard(bundle: Path, root: Path, host: str = "codex", force_manage
                     for path in sorted(snapshots, key=lambda item: len(item.parts), reverse=True):
                         restore_snapshot(path, snapshots[path])
                     for directory in sorted(created_dirs, key=lambda item: len(item.parts), reverse=True):
-                        if directory.exists() and directory.is_dir() and not _is_reparse_point(directory):
+                        if directory.exists() and directory.is_dir() and not is_reparse_point(directory):
                             try:
                                 directory.rmdir()
                             except OSError:

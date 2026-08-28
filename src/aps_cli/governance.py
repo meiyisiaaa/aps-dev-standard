@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .installer import assert_no_reparse
+from .installer import STANDARD_VERSION_RE, assert_no_reparse
 
 
 PROFILE_RELATIVE = Path(".ai/project-profile.json")
@@ -44,45 +44,25 @@ REGISTRY_LOAD_POLICIES = {
     "release-only",
 }
 
-PROFILE_RELEASE_CHECKS: dict[str, tuple[str, ...]] = {
-    "NORMAL": ("lint", "build", "functional_qa", "rollback"),
-    "LARGE": (
-        "lint",
-        "typecheck",
-        "unit",
-        "integration",
-        "e2e",
-        "performance",
-        "migration",
-        "security",
-        "functional_qa",
-        "monitoring",
-        "rollback",
-        "disaster_recovery",
-        "on_call",
-        "external_acceptance",
-    ),
-    "REGULATED": (
-        "lint",
-        "typecheck",
-        "unit",
-        "integration",
-        "e2e",
-        "performance",
-        "migration",
-        "security",
-        "privacy_compliance",
-        "traceability",
-        "security_approval",
-        "functional_qa",
-        "monitoring",
-        "rollback",
-        "audit_retention",
-        "disaster_recovery",
-        "on_call",
-        "external_acceptance",
-    ),
-}
+_RELEASE_REQUIREMENTS_PATH = Path(__file__).resolve().parent / "bundle" / "package" / "tools" / "release-requirements.json"
+
+
+def _load_profile_release_checks() -> dict[str, tuple[str, ...]]:
+    try:
+        raw = json.loads(_RELEASE_REQUIREMENTS_PATH.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Release requirements are unavailable: {exc}") from exc
+    if not isinstance(raw, dict) or set(raw) != RISK_PROFILES:
+        raise RuntimeError("Release requirements must define NORMAL, LARGE, and REGULATED")
+    checks: dict[str, tuple[str, ...]] = {}
+    for profile, values in raw.items():
+        if not isinstance(values, list) or not values or any(not isinstance(value, str) or not value.strip() for value in values):
+            raise RuntimeError(f"Release requirements for {profile} are invalid")
+        checks[profile] = tuple(values)
+    return checks
+
+
+PROFILE_RELEASE_CHECKS = _load_profile_release_checks()
 
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$", re.ASCII)
 WORKSTREAM_ID_RE = re.compile(r"^WS-[A-Z0-9][A-Z0-9_-]*$", re.ASCII)
@@ -373,7 +353,7 @@ def validate_registry(data: dict[str, Any]) -> dict[str, Any]:
         raise GovernanceError(f"registry.yaml 缺少字段：{', '.join(missing)}")
     if isinstance(data["schema_version"], bool) or data["schema_version"] != 1:
         raise GovernanceError("registry.yaml.schema_version 必须是 1")
-    if not isinstance(data["standard_version"], str) or not re.fullmatch(r"1\.(1|2|3)\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?", data["standard_version"]):
+    if not isinstance(data["standard_version"], str) or not STANDARD_VERSION_RE.fullmatch(data["standard_version"]):
         raise GovernanceError(f"registry.yaml.standard_version 无效：{data['standard_version']}")
     if isinstance(data["revision"], bool) or not isinstance(data["revision"], int) or data["revision"] < 1:
         raise GovernanceError("registry.yaml.revision 必须是正整数")

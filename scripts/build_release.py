@@ -50,6 +50,7 @@ def payload_hashes(bundle: Path) -> dict[str, str]:
         for name in [*directories, *filenames]:
             path = current_path / name
             assert_safe_path(package, path)
+        directories[:] = [name for name in directories if name != ".git"]
         files.extend(
             current_path / name
             for name in filenames
@@ -124,16 +125,17 @@ def release_files(root: Path, tracked: set[Path]) -> list[Path]:
         assert_safe_path(root, current_path)
         for name in [*directories, *filenames]:
             assert_safe_path(root, current_path / name)
+        directories[:] = [name for name in directories if name != ".git"]
     paths.extend(
         path
         for path in payload.rglob("*")
-        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+        if path.is_file() and ".git" not in path.relative_to(payload).parts and "__pycache__" not in path.parts and path.suffix != ".pyc"
     )
     expected = {path.relative_to(root) for path in paths}
     untracked_payload = [
         path.relative_to(root)
         for path in payload.rglob("*")
-        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc" and path.relative_to(root) not in tracked
+        if path.is_file() and ".git" not in path.relative_to(payload).parts and "__pycache__" not in path.parts and path.suffix != ".pyc" and path.relative_to(root) not in tracked
     ]
     if untracked_payload:
         raise SystemExit(f"release source contains untracked payload file: {untracked_payload[0]}")
