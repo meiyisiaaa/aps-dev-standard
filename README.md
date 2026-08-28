@@ -68,7 +68,7 @@ aps doctor
 aps status
 ```
 
-Bootstrap 时必须让用户确认项目风险级别并写入 `.ai/project-profile.json`：`NORMAL`（普通）、`LARGE`（大型）或 `REGULATED`（强合规）。所有项目维护 `.ai/audit/transitions.jsonl`；大型项目按模块 / 工作流填写 `workstreams`，不增加新的 Stage。到 Stage 20 Release 边界时，按级别补齐 `.ai/release-readiness.json`；用户 Gate 仍需单独确认。
+Bootstrap 时必须让用户确认项目风险级别并写入 `.ai/project-profile.json`：`NORMAL`（普通）、`LARGE`（大型）或 `REGULATED`（强合规）。所有项目维护 `.ai/audit/transitions.jsonl`；大型项目按模块 / 工作流填写 `workstreams`，不增加新的 Stage。到 Stage 20 Release 边界时，按级别补齐 `.ai/release-readiness.json`。普通 Stage 满足 Artifact、验收、Verification 和 blocker 条件后，可直接记录 `COMPLETE + PASS` 并进入 Transition Contract 指定的下一 Stage，不要求用户额外确认“Stage PASS”；用户决策、重大范围 / 方向变化、HOLD / STOP 和 Release approval 仍需确认。
 
 已有项目：
 
@@ -128,9 +128,9 @@ aps decision cancel DEC-001 --reason "scope changed"
 
 After switching conversations, run `aps status` or `aps resume --no-launch` to print the current Cycle, blockers, pending decisions, and next action. For Market / Product Research, answer the original question directly in the current conversation, analyze the evidence, then keep the full report in the Stage Artifact and expose the user-facing summary with `aps research brief <ARTIFACT>`.
 
-Before ending, pausing, blocking, or handing off any Stage, output a one-page Stage User Brief in the current conversation with: goal, inputs, completed work, incomplete work, user decisions, confirmation impact, and verification results. The Stage Artifact must also contain or reference an Artifact Contract with its purpose, inputs, outputs, acceptance criteria, current status, blocking decisions, and next stage. A written document alone does not mean the Stage is complete.
+Before ending, pausing, blocking, or handing off any Stage, output a one-page Stage User Brief in the current conversation with: goal, inputs, completed work, incomplete work, user decisions, confirmation impact, next-stage entry reminder, and verification results. Once an ordinary Stage satisfies its Artifact, acceptance, Verification, and blocker conditions, it may record `COMPLETE + PASS` and follow the Transition Contract without asking the user to confirm "Stage PASS" again. The Stage Artifact must also contain or reference an Artifact Contract with its purpose, inputs, outputs, acceptance criteria, current status, blocking decisions, and next stage. A written document alone does not mean the Stage is complete.
 
-交接优化：Stage User Brief 只在阶段完成、阻塞、暂停或切换对话时输出，不要求每轮重复；handoff 只携带当前 Stage / Task 和直接引用，旧 Cycle 与完整 Standard 按需读取。大型项目的并行 Task 只交接变更文件、接口影响、依赖状态和 Evidence refs，由 Coordinator 统一更新全局治理状态。
+交接优化：Stage User Brief 只在阶段完成、阻塞、暂停或切换对话时输出，不要求每轮重复；完成结果必须提醒 Transition Contract 指定的下一 Stage，以及该 Stage 是否需要先打开 Plan 模式；handoff 只携带当前 Stage / Task 和直接引用，旧 Cycle 与完整 Standard 按需读取。大型项目的并行 Task 只交接变更文件、接口影响、依赖状态和 Evidence refs，由 Coordinator 统一更新全局治理状态。
 
 研究路径：先在当前对话直接回答原始问题并分析关键证据，再把完整报告写入 Stage Artifact；使用 `aps research brief <ARTIFACT>` 展示摘要。Artifact 必须包含稳定的 `## Research Brief` 标识和六类必需字段，缺失时按 CLI 提示补齐。
 

@@ -204,7 +204,7 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
         report.pass_("high-impact Stage entry requires Codex Plan mode")
     else:
         report.error("Stage Plan mode entry policy is incomplete")
-    stage_brief_markers = ("Stage User Brief", "目标", "输入", "已完成", "未完成", "用户决策", "确认影响", "验证结果")
+    stage_brief_markers = ("Stage User Brief", "目标", "输入", "已完成", "未完成", "用户决策", "确认影响", "下一阶段入口提醒", "验证结果")
     artifact_contract_markers = ("Artifact Contract", "Purpose", "Inputs", "Outputs", "Acceptance Criteria", "Current Status", "Blocking Decisions", "Next Stage")
     if all(marker in life + "\n" + art + "\n" + boot for marker in stage_brief_markers):
         report.pass_("each Stage requires a user brief")

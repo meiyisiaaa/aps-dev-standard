@@ -269,7 +269,7 @@ def main() -> int:
         run_python("aps.py", "init", str(project), "--host", "generic", "--no-launch", "--no-git")
         run_python("aps.py", "doctor", str(project), "--host", "generic", "--standard-only")
         bootstrap_prompt = (project / ".ai" / "bootstrap" / "bootstrap-prompt.txt").read_text(encoding="utf-8")
-        required_prompt_markers = ("优点", "缺点", "适用条件", "主要风险", "直接回答原始研究问题", "分析关键证据", "用户需要 PRD 时", "prd-snapshot.md", "Stage User Brief", "不要每轮对话重复", "当前 Stage / Task")
+        required_prompt_markers = ("优点", "缺点", "适用条件", "主要风险", "直接回答原始研究问题", "分析关键证据", "用户需要 PRD 时", "prd-snapshot.md", "Stage User Brief", "不要每轮对话重复", "当前 Stage / Task", "下一阶段入口提醒", "不要求用户额外确认“Stage PASS”")
         if any(marker not in bootstrap_prompt for marker in required_prompt_markers):
             raise SystemExit("bootstrap prompt does not require decision and research analysis")
         plan_prompt_markers = ("Codex", "Plan 模式", "Stage 01、05、06、07、08、09、10、13、14、15、16、20", "Host capability blocker")
@@ -427,10 +427,22 @@ def main() -> int:
         initial_status = run_python_capture("aps.py", "status", str(project))
         if "Next action:" not in initial_status or "Mode gate: PLAN (required on Stage entry)" not in initial_status:
             raise SystemExit("status did not provide the Stage Plan mode gate and next action")
+        normal_state = state.read_text(encoding="utf-8")
+        state.write_text(
+            normal_state.replace("stage_status: ACTIVE", "stage_status: COMPLETE").replace("gate_status: PENDING", "gate_status: PASS"),
+            encoding="utf-8",
+        )
+        write_transition_audit(project)
+        complete_status = run_python_capture("aps.py", "status", str(project))
+        complete_handoff = run_python_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
+        for output in (complete_status, complete_handoff):
+            if "不需要额外确认当前 Stage PASS" not in output or "下一阶段入口提醒" not in output or "如果目标 Stage 需要 Plan 模式" not in output:
+                raise SystemExit("completed Stage did not provide direct-transition and next-Stage Plan guidance")
+        state.write_text(normal_state, encoding="utf-8")
+        write_transition_audit(project)
         codex_resume = run_python_capture("aps.py", "resume", str(project), "--host", "codex")
         if "Plan mode is required" not in codex_resume or "will not auto-launch" not in codex_resume:
             raise SystemExit("Codex resume did not block a normal session for a Plan-required Stage")
-        normal_state = state.read_text(encoding="utf-8")
         state.unlink()
         missing_state_status = run_python_capture("aps.py", "status", str(project))
         missing_state_resume = run_python_capture("aps.py", "resume", str(project), "--host", "codex")

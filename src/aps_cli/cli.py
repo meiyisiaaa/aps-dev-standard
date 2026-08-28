@@ -421,6 +421,11 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
             lines.append(f"Blocker: {kind}{(' ' + suffix) if suffix else ''}")
         elif blocker:
             lines.append(f"Blocker: {blocker}")
+    stage_ready = (
+        not pending
+        and not blockers
+        and (state.get("stage_status") == "COMPLETE" or gate == "PASS")
+    )
     next_action = state.get("next_action")
     if next_action in (None, "", "null"):
         if pending:
@@ -430,8 +435,8 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
             )
         elif blockers:
             next_action = "解决以上 blocker，并重新运行 `aps status`。"
-        elif state.get("stage_status") == "COMPLETE" or gate == "PASS":
-            next_action = "读取 Transition Contract，进入下一 Stage。"
+        elif stage_ready:
+            next_action = "读取 Transition Contract，直接进入其指定的下一 Stage；不需要额外确认当前 Stage PASS。"
         elif gate == "REVISE":
             next_action = "按 Failure Route 修复当前 Stage，并重新验证。"
         elif gate == "HOLD":
@@ -447,6 +452,11 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
     else:
         rendered = json.dumps(next_action, ensure_ascii=False)
     lines.append(f"Next action: {rendered}")
+    if stage_ready:
+        lines.append(
+            "下一阶段入口提醒：读取 Transition Contract；如果目标 Stage 需要 Plan 模式，"
+            "先在当前 Host 打开 Plan，再开始工作。普通 Stage PASS 不需要额外用户确认。"
+        )
     return lines
 
 
@@ -455,7 +465,8 @@ def handoff_prompt(mode: str, root: Path | None = None) -> str:
         prompt = (
             "请读取 `.ai/bootstrap/bootstrap-prompt.txt` 并执行。"
             "这是一个新项目：初始化运行治理状态并从 Stage 01 开始；"
-            "任何文件修改前先切换到 Codex Plan 模式；遇到第一个必需 Gate 或用户决策时停止。"
+            "任何文件修改前先切换到 Codex Plan 模式；普通 Stage 满足 Artifact 和 Validation 后直接推进，"
+            "仅在需要用户决策的 Gate 或 Release 边界停止。"
         )
     elif mode == "resume":
         prompt = (
@@ -1129,7 +1140,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  决策：aps decision request <REQUEST-FILE> → 当前对话分析 → aps decision answer DEC-001 A\n"
             "  研究：aps research brief <ARTIFACT>；完整报告仍保留在 Stage Artifact。\n"
             "  风险：Bootstrap 确认 NORMAL/LARGE/REGULATED 并写入 .ai/project-profile.json。\n"
-            "  Release：Stage 20 边界补齐 .ai/release-readiness.json；用户 Gate 仍需单独确认。"
+            "  Release：Stage 20 边界补齐 .ai/release-readiness.json；Release approval 仍需用户确认，普通 Stage PASS 不需要额外确认。"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

@@ -4,7 +4,7 @@
 - Artifact & State Standard: `.ai/standards/artifact-state.md`
 
 第一次使用：
-1. 新项目从 `aps init --no-launch` 开始；已有项目从 `aps resume --no-launch` 开始，不要用 `init` 覆盖旧项目。
+1. 新项目从 `aps init --no-launch` 开始；已有项目从 `aps resume --no-launch` 开始，不要用 `init` 覆盖旧项目。普通 Stage 满足 Artifact 和 Validation 后直接推进；仅在需要用户决策的 Gate 或 Release 边界停止。
 2. 将 CLI 打印的完整 `APS Agent Handoff` 代码块发送到当前 Agent Host；不要依赖剪贴板或项目内 handoff 文件。
 3. Bootstrap 完成后运行 `aps doctor`，再运行 `aps status` 确认当前 Cycle、Stage、Gate、blocker 和下一步。
 4. Bootstrap 必须让用户确认项目风险级别：`NORMAL`（普通）、`LARGE`（大型）或 `REGULATED`（强合规），并将结果写入 `.ai/project-profile.json`；不要根据项目名称猜测级别。
@@ -19,7 +19,7 @@ APS CLI 恢复边界：普通已有项目使用 `aps resume`；只有检测到 A
 - 仍不确定时保留 blocker，向用户请求决策；`resume` 只恢复，不创建新 Cycle。
 - `.ai/project-profile.json` 缺失或无法解析时，不得猜测为 `NORMAL`；按模板补齐风险基线后再继续。
 - 所有项目必须维护 `.ai/audit/transitions.jsonl`；`LARGE` / `REGULATED` 还必须按模块或工作流填写 `workstreams`；审计链最后一条记录必须与 `.ai/state.yaml` 一致。
-- 进入 Release 边界前，按风险级别生成 `.ai/release-readiness.json`；所有该级别要求的检查必须有 `PASS` 和 Evidence ref，用户确认仍单独保留为 Gate 语义。
+- 进入 Release 边界前，按风险级别生成 `.ai/release-readiness.json`；所有该级别要求的检查必须有 `PASS` 和 Evidence ref。Release approval、重大范围 / 方向变化和其他明确的用户决策仍单独保留为 Gate 语义；普通 Stage PASS 不要求用户额外确认。
 
 交接只携带当前 Stage / Task、直接上游有效 Artifact、明确引用的 Source 和当前 blocker；不要把完整 Standard、旧 Cycle 或无关 Research 复制进 handoff。
 
@@ -41,8 +41,8 @@ Bootstrap 顺序：
 13. 进入或恢复以下 Stage 时，必须先在当前 Agent Host 中打开原生 Plan 模式（Codex Host 使用 Codex Plan 模式），再进行任何文件修改或其他工作区变更：Stage 01、05、06、07、08、09、10、13、14、15、16、20。首次进入、从上游返修回来、或范围 / 方向发生变化时重新执行一次；计划确认后可切换普通模式执行。Stage 22 在存在 Active Change 时同样执行。每个普通对话轮次不重复规划。
 14. 如果当前 Host 无法打开或确认原生 Plan 模式，不得假装已满足；先记录 Host capability blocker，并停止会修改工作区的动作，等待用户在 Host 中切换或提供已记录的等价 fallback。
 15. 全局治理写入遵守 Single Writer、revision 与 compare-before-write；子 Agent 不直接覆盖全局治理 Artifact。
-16. 只有满足当前 Transition / Gate 条件并完成 Validation 后才推进。
-17. 每个 Stage 在完成、阻塞、暂停或切换对话前，必须在当前对话输出一页 Stage User Brief，固定包含：目标、输入、已完成、未完成、用户决策、确认影响、验证结果。简报不等于阶段完成；Artifact Contract、验收条件和 Gate / Transition 仍必须单独满足。
+16. 只有满足当前 Transition / Gate 条件并完成 Validation 后才推进。普通 Stage 的 Artifact、验收条件、Verification 和 blocker 条件满足后，Agent / Coordinator 可直接记录 `COMPLETE + PASS` 并进入 Transition Contract 指定的下一 Stage，不要求用户额外确认“Stage PASS”。需要用户决策、重大范围 / 方向变化、HOLD / STOP 或 Release approval 时必须停止并请求用户确认。
+17. 每个 Stage 在完成、阻塞、暂停或切换对话前，必须在当前对话输出一页 Stage User Brief，固定包含：目标、输入、已完成、未完成、用户决策、确认影响、下一阶段入口提醒、验证结果。普通 Stage 输出简报后可直接推进；简报不替代 Artifact Contract、验收条件和 Gate / Transition。
 18. 用户需要 PRD 时，不创建新的 Stage；以 Stage 08 Requirements 为核心，按需使用 `.ai/templates/prd-snapshot.md` 生成派生汇总。每个关键结论引用当前有效 Artifact 或 `DEC-*`，PRD Snapshot 不替代 Requirements、UX、Architecture、Security 或 Gate。
 
 Stage User Brief 最小模板（只在完成、阻塞、暂停或交接时填写，不要每轮对话重复）：
@@ -53,6 +53,7 @@ Stage User Brief 最小模板（只在完成、阻塞、暂停或交接时填写
 未完成：<剩余缺口>
 用户决策：<已确认或待确认事项>
 确认影响：<确认后进入哪一步>
+下一阶段入口提醒：<Transition Contract 指定的下一 Stage；若需要 Plan，先在 Host 打开 Plan 模式>
 验证结果：<已通过的检查>
 ```
 
