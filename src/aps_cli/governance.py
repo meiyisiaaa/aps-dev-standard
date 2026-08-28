@@ -77,19 +77,49 @@ class GovernanceError(RuntimeError):
 
 @dataclass(frozen=True)
 class GovernanceProblem:
-    """A typed, non-persistent governance problem for CLI recovery routing."""
+    """A typed, non-persistent governance issue for CLI recovery routing."""
 
     code: str
     message: str
     path: str | None = None
+    severity: str = "warning"
 
 
-def governance_problem(code: str, message: str, path: str | None = None) -> GovernanceProblem:
-    return GovernanceProblem(code=code, message=message, path=path)
+def governance_problem(
+    code: str,
+    message: str,
+    path: str | None = None,
+    *,
+    severity: str | None = None,
+) -> GovernanceProblem:
+    if severity is None:
+        severity = "error" if any(marker in message for marker in _SAFETY_MARKERS) else "warning"
+    if severity not in {"warning", "error"}:
+        raise ValueError(f"unsupported governance severity: {severity}")
+    return GovernanceProblem(code=code, message=message, path=path, severity=severity)
+
+
+_SAFETY_MARKERS = (
+    "符号链接",
+    "reparse point",
+    "不是普通文件",
+    "不是安全的项目相对路径",
+    "路径无效",
+    "无法读取",
+    "无法安全读取",
+)
 
 
 def _wrap_problems(code: str, messages: list[str], path: str | None = None) -> list[GovernanceProblem]:
-    return [governance_problem(code, message, path) for message in messages]
+    return [
+        governance_problem(
+            code,
+            message,
+            path,
+            severity="error" if any(marker in message for marker in _SAFETY_MARKERS) else "warning",
+        )
+        for message in messages
+    ]
 
 
 def profile_path(root: Path) -> Path:
@@ -131,11 +161,17 @@ def _string_list(value: object, label: str, *, allow_empty: bool = True) -> list
 
 def _read_json(path: Path, label: str) -> dict[str, Any]:
     assert_no_reparse(path)
-    if not path.is_file():
+    if not path.exists() and not path.is_symlink():
         raise GovernanceError(f"{label} 缺失：{path.as_posix()}")
+    if not path.is_file():
+        raise GovernanceError(f"{label} 必须是普通文件：{path.as_posix()}")
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise GovernanceError(f"{label} 无法读取：{exc}") from exc
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
         raise GovernanceError(f"{label} 无法解析：{exc}") from exc
     if not isinstance(value, dict):
         raise GovernanceError(f"{label} 必须是 JSON 对象")
@@ -474,14 +510,12 @@ def _validate_transition(record: dict[str, Any], index: int) -> dict[str, Any]:
         if normalized_from["stage_type"] == "GATED" and normalized_from["gate_status"] != "PASS":
             raise GovernanceError(f"Transition {index} 离开 GATED Stage 前必须 Gate PASS")
     if normalized_from is not None and normalized_from["cycle"] != to_state["cycle"]:
-        if normalized_from["stage"] != 23 or normalized_from["stage_status"] != "COMPLETE" or (normalized_from["stage_type"] == "GATED" and normalized_from["gate_status"] != "PASS"):
-            raise GovernanceError(f"Transition {index} 开始新 Cycle 前必须完成并通过 Stage 23")
         if to_state["stage"] != 1:
             raise GovernanceError(f"Transition {index} 新 Cycle 必须从 Stage 1 开始")
     return {**record, "from_state": normalized_from, "to_state": to_state}
 
 
-def validate_transition_log(root: Path, state: dict[str, Any], profile: dict[str, Any]) -> list[str]:
+def validate_transition_log(root: Path, state: dict[str, Any], profile: dict[str, Any] | None = None) -> list[str]:
     path = transitions_path(root)
     required = True
     if not path.exists() and not path.is_symlink():
@@ -491,7 +525,11 @@ def validate_transition_log(root: Path, state: dict[str, Any], profile: dict[str
         if not path.is_file():
             return [f"Transition 审计路径不是普通文件：{TRANSITIONS_RELATIVE.as_posix()}"]
         records: list[dict[str, Any]] = []
-        for index, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError) as exc:
+            return [f"Transition 审计无法读取：{exc}"]
+        for index, line in enumerate(lines, 1):
             if not line.strip():
                 continue
             try:
@@ -533,7 +571,7 @@ def validate_transition_log(root: Path, state: dict[str, Any], profile: dict[str
         if records[-1]["revision"] > state["revision"]:
             return ["Transition 审计记录 revision 不能大于 `.ai/state.yaml` 的 revision"]
         return []
-    except (OSError, UnicodeError, GovernanceError, RuntimeError) as exc:
+    except (GovernanceError, RuntimeError) as exc:
         return [str(exc)]
 
 
@@ -647,10 +685,10 @@ def prd_snapshot_problems(root: Path, state: dict[str, Any]) -> list[str]:
 
 def runtime_governance_problems(root: Path, state: dict[str, Any]) -> tuple[dict[str, Any] | None, list[GovernanceProblem]]:
     profile, error = load_project_profile(root)
+    problems: list[GovernanceProblem] = []
     if error:
-        return None, [governance_problem("project_profile", error, PROFILE_RELATIVE.as_posix())]
-    assert profile is not None
-    problems = _wrap_problems("registry", registry_problems(root), REGISTRY_RELATIVE.as_posix())
+        problems.append(governance_problem("project_profile", error, PROFILE_RELATIVE.as_posix()))
+    problems.extend(_wrap_problems("registry", registry_problems(root), REGISTRY_RELATIVE.as_posix()))
     problems.extend(
         _wrap_problems(
             "transition_audit",
@@ -658,13 +696,14 @@ def runtime_governance_problems(root: Path, state: dict[str, Any]) -> tuple[dict
             TRANSITIONS_RELATIVE.as_posix(),
         )
     )
-    problems.extend(
-        _wrap_problems(
-            "release_readiness",
-            release_readiness_problems(root, state, profile),
-            RELEASE_READINESS_RELATIVE.as_posix(),
+    if profile is not None:
+        problems.extend(
+            _wrap_problems(
+                "release_readiness",
+                release_readiness_problems(root, state, profile),
+                RELEASE_READINESS_RELATIVE.as_posix(),
+            )
         )
-    )
     problems.extend(_wrap_problems("prd_snapshot", prd_snapshot_problems(root, state)))
     return profile, problems
 
@@ -675,7 +714,9 @@ def profile_status(root: Path, state: dict[str, Any] | None) -> tuple[str, list[
         path = profile_path(root)
         if state is None and not path.exists() and not path.is_symlink():
             return "not initialized", []
-        return "invalid", [governance_problem("project_profile", error, PROFILE_RELATIVE.as_posix())]
+        return "not initialized" if not path.exists() and not path.is_symlink() else "invalid", [
+            governance_problem("project_profile", error, PROFILE_RELATIVE.as_posix())
+        ]
     assert profile is not None
     problems = (
         _wrap_problems("registry", registry_problems(root), REGISTRY_RELATIVE.as_posix())

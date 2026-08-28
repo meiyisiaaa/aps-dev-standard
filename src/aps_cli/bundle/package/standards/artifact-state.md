@@ -56,7 +56,7 @@ Gate / Stage
 
 不要求把所有字段机械写进每个文件；可以由 Registry、目录结构或工具维护，但必须可查询。
 
-每个 Stage 的主 Artifact MUST 包含或引用一个 Artifact Contract；同一 Stage 有多个产物时，由主 Artifact 统一绑定，避免在每个文件重复维护：
+重要或需要交接的 Stage 主 Artifact 可以包含或引用一个 Artifact Contract；同一 Stage 有多个产物时，可由主 Artifact 统一绑定，避免在每个文件重复维护：
 
 ```text
 Artifact
@@ -69,7 +69,7 @@ Artifact
 └── 下一阶段 / Next Stage
 ```
 
-验收条件必须是可检查的结果或证据引用；仅写完文档不代表满足验收。未完成验收或仍有阻塞决策时，Artifact / Stage 不得标记为 COMPLETE 或通过 Gate。
+若要把 Artifact / Stage 标记为 COMPLETE 或通过 Gate，验收条件应是可检查的结果或证据引用，且待处理用户决策必须先解除；普通记录缺失不自动阻塞工作。
 
 ---
 
@@ -83,18 +83,14 @@ AI 在执行项目时：
 不得只在聊天中输出
 ```
 
-每次进入新阶段时：
+需要创建或更新阶段产物时：
 
 ```text
-检查对应文件是否存在
+按当前任务读取或创建对应文件
 ↓
-不存在 → 创建
+根据实际结果更新
 ↓
-已存在 → 读取
-↓
-根据当前阶段结果更新
-↓
-检查相关文档是否需要同步
+需要时同步相关文档
 ↓
 确认写入成功
 ```
@@ -114,7 +110,7 @@ AI 在执行项目时：
 
 # 2. 项目治理工作区与初始化
 
-项目治理数据 MUST 与产品源码分离。默认结构：
+项目治理数据 SHOULD 与产品源码分离。默认结构：
 
 ```text
 project/
@@ -123,10 +119,10 @@ project/
 │   ├── state.yaml
 │   ├── decisions.md
 │   ├── registry.yaml
-│   ├── project-profile.json
-│   ├── release-readiness.json      # Stage 20 边界按需创建
+│   ├── project-profile.json        # 可选风险元数据
+│   ├── release-readiness.json      # 发布需要时创建
 │   ├── audit/
-│   │   └── transitions.jsonl       # 所有项目必需；高风险项目要求更完整
+│   │   └── transitions.jsonl       # 可选历史记录
 │   ├── runtime/
 │   │   └── hosts/       # 每个 Agent Host 独立 Adapter / Capability State
 │   ├── cycles/
@@ -141,25 +137,23 @@ project/
 
 如果 Standard 本身被复制进项目，SHOULD 放入 `.ai/standards/` 或其他明确的只读治理目录，并由 `AGENTS.md` / `registry.yaml` 引用；不得要求普通 Task 每次完整读取。
 
-第一次接管项目时：
+第一次接管项目时，按项目实际需要：
 
 ```text
 检测 repo root
 ↓
-检查 / 创建根 `AGENTS.md`
+检查或创建根 `AGENTS.md`
 ↓
-检查 / 创建 `.ai/state.yaml`
+检查或创建 `.ai/state.yaml`
 ↓
-检查 / 创建 `.ai/decisions.md`
-↓
-检查 / 创建 `.ai/registry.yaml`
+按需检查 `.ai/decisions.md` 和 `.ai/registry.yaml`
 ↓
 初始化 active cycle
 ↓
 验证目录和 schema
 ```
 
-Bootstrap 还必须让用户确认项目风险级别并写入 `.ai/project-profile.json`。所有项目都维护最小 Transition 审计；`NORMAL` 适用于普通项目，`LARGE` 必须列出模块 / 工作流，`REGULATED` 还必须保留合规、审批和审计留存证据。风险级别不增加 Stage，只改变 Evidence 和 Release readiness 的最低要求。
+项目风险级别、Transition 审计和 Release readiness 都是可选辅助元数据。存在时检查其格式和安全路径；缺失或过期记录 WARN，不猜测为 `NORMAL`，也不阻塞普通流程。
 
 固定 Registry：`.ai/registry.yaml`。不得把 Registry 随意散落到 Stage 文档或 Bootstrap 文档中。
 
@@ -494,7 +488,7 @@ updated_by: coordinator
 
 ```text
 只保存当前状态，不复制 Decision / Requirement / Research 正文
-历史由 Git、Change Log、Decision Log、Cycle Artifact 保存；所有项目另外由 `.ai/audit/transitions.jsonl` 保存结构化 Stage / Gate 流转记录
+历史由 Git、Change Log、Decision Log、Cycle Artifact 保存；需要时再由 `.ai/audit/transitions.jsonl` 保存结构化 Stage / Gate 流转记录
 revision 每次治理写入必须 +1
 stage_status 只允许 ACTIVE / BLOCKED / COMPLETE
 GATED Stage 的 gate_status 只允许 PENDING / PASS / REVISE / HOLD / STOP
@@ -518,7 +512,7 @@ Release / Cycle Review
 
 ## 5.1 Transition Audit
 
-`.ai/state.yaml` 只保存当前快照，不能单独证明“从哪个 Stage / Gate 进入当前状态”。所有项目 MUST 使用 `.ai/audit/transitions.jsonl`，每行一个 JSON Transition Record，并保持只追加：
+`.ai/state.yaml` 只保存当前快照。需要历史追踪时，可使用 `.ai/audit/transitions.jsonl`，每行一个 JSON Transition Record，并保持只追加：
 
 ```json
 {
@@ -534,7 +528,7 @@ Release / Cycle Review
 }
 ```
 
-每次 Stage / Gate / Cycle 变更都必须追加记录；Stage 变更离开 GATED Stage 前必须有 `COMPLETE + PASS`。普通 Stage 满足 Artifact、Verification 和 blocker 条件后可直接进入 Transition Contract 指定的下一 Stage，不要求用户额外确认“Stage PASS”。APS 会拒绝格式错误、链断裂或最后状态与 `state.yaml` 不一致的审计链。审计记录不能替代 Stage Artifact、Decision Log、Git 或需要用户决策 / Release approval 的 Gate。
+存在审计文件时，建议记录 Stage / Gate / Cycle 变更。格式错误、链断裂或最后状态不一致会产生 WARN；路径、链接或读取不安全仍失败。审计记录不能替代 Stage Artifact、Decision Log、Git 或需要用户决策 / Release approval 的 Gate。
 
 # 6. 阶段 Artifact 布局与自动创建
 
@@ -654,7 +648,7 @@ PRD Snapshot 是 Stage 05–09 Artifact 的可选派生汇总，默认在 Stage 
 规则：
 
 ```text
-每个关键结论必须引用当前有效 Artifact 或 DEC-*。
+每个关键结论建议引用当前有效 Artifact 或 DEC-*；缺失时标明待复核。
 不得复制一份可独立修改的 Requirements / Decision 正文。
 来源变化时先执行 Impact Analysis，再更新 Snapshot。
 Snapshot 缺失或过期时，不得替代 Requirements、UX、Architecture 或 Security 验收。
@@ -914,9 +908,9 @@ EXECUTION_LOOP / OBSERVATION_LOOP / ROUTER Stage 按 Lifecycle Standard 写 Tran
 
 # 10. 用户提问规则
 
-需要提问时，AI 不要丢一个宽泛问题。
+需要提问时，AI 应尽量让问题可回答；简单问题可以直接使用自由文本。
 
-应输出：
+可选地输出：
 
 ```text
 决策卡
@@ -981,17 +975,17 @@ approval
 matrix
 ```
 
-新建的 Decision Request 使用 schema version 2，必须包含 Decision Card；已有 schema version 1 的历史请求可以继续查看、回答或取消，但再次展示前应补齐决策卡字段。
+新建的 Decision Request 使用 schema version 2；已有 schema version 1 的历史请求可以继续查看、回答或取消。最小请求只需问题、状态、Cycle/Stage、输入类型、schema version 和 id；Decision Card、候选项、证据、推荐项、取舍、影响和确认方式按需要填写。
 
-完整候选项、证据引用、推荐项和取舍必须保留在 Decision Request 中；`.ai/state.yaml` 只保存 `user_decision` blocker 和 `pending_decision_refs`，不复制决策正文。
+`.ai/state.yaml` 只保存 `user_decision` blocker 和 `pending_decision_refs`，不复制决策正文。
 
 对话交互规则：
 
-在当前对话中提出结构化问题前，必须逐项分析每个选项的优点、缺点、适用条件和主要风险，并保留 Decision Request 中的完整候选项、证据、推荐项和取舍。每个选项的 `tradeoffs` 至少记录优点和缺点；已知事实与推断分开标记，未知项明确写为待验证。如果给出推荐，必须说明推荐依据以及什么新证据会改变推荐。决策交互不受 Host UI 或选项数量限制；多选、排序、自由输入、数字等类型可以分轮提问或直接接受自由文本。用户回答后运行 `aps decision answer`，解除 blocker 并递增 state revision。
+复杂决策可以逐项说明证据、取舍、风险和确认方式；简单决策可直接提问。不得把自由输入或复杂问题伪装成单选。用户回答后运行 `aps decision answer`，解除对应 blocker 并递增 state revision。
 
 ### 10.2 Research Brief
 
-Market Research / Product Research 完成后，必须在当前对话输出 Research Brief，同时写入完整 Stage Artifact。Brief 至少包含：
+Market Research / Product Research 完成后，可在当前对话输出 Research Brief，并按需要写入 Stage Artifact。建议包含：
 
 ```text
 研究问题 / 范围
@@ -1002,13 +996,13 @@ Market Research / Product Research 完成后，必须在当前对话输出 Resea
 待决策项
 ```
 
-交付顺序：先直接回答原始研究问题（多个问题逐项回答），再分析关键证据、推断、限制和建议，最后输出 Research Brief。对话中的 Brief 用于让用户及时看见结果；CLI 可用时运行 `aps research brief <ARTIFACT>` 输出当前摘要，但不能替代直接回答和分析。完整报告和证据仍以 Stage Artifact 为准。不得只落盘而静默结束，也不得为了省上下文省略关键结论、证据边界或待决策项。
+交付顺序可按用户需要安排；CLI 可用时运行 `aps research brief <ARTIFACT>` 输出当前摘要。字段缺失或过期时提示补充，不阻塞安全的普通工作；需要用户选择时再登记 blocker。
 
 ---
 
 # 11. Change Control
 
-任何已经通过 Gate 的内容发生重大变化，创建 Change 记录。
+已经通过 Gate 的内容发生实际影响时，可创建 Change 记录；不因文件数量或 Stage 编号自动创建。
 
 可写入：
 
@@ -1060,20 +1054,20 @@ User Decision:
 
 # 12. Scope Control
 
-所有阶段和任务必须维护：
+复杂阶段和任务可以维护：
 
 ```text
 In Scope
 Out of Scope
 ```
 
-AI 发现额外问题时：
+AI 发现额外问题时，可以：
 
 ```text
 记录 Issue
 ```
 
-不要直接修改。
+普通局部问题可直接处理并验证；会改变已确认契约或安全边界的问题再提出 Scope Change。
 
 如果确实需要纳入：
 
@@ -1173,7 +1167,7 @@ Review 完成
 必要监控存在
 ```
 
-Task 的验证清单应来自 Impact Analysis：定向验证用于减少无关重复，但不能删除当前 Stage、受影响下游 Stage、Gate 或 Release readiness 的必需检查。
+Task 的验证清单应与实际影响匹配；定向验证用于减少无关重复，只有明确受影响的 Stage、Gate 或 Release 检查才需要加入验证范围。
 
 才允许：
 
@@ -1317,7 +1311,7 @@ Design System Agent Skill 引用了不存在或过期的设计来源
 
 ## 17.1 Release Readiness
 
-进入 Stage 20 的 Release 边界时，按 `.ai/project-profile.json` 的风险级别创建 `.ai/release-readiness.json`。它是机器可校验的检查索引，不替代 `20_RELEASE_CHECKLIST.md`、Release Notes 或用户 Gate。
+进入 Stage 20 的 Release 边界时，可按 `.ai/project-profile.json` 的风险级别创建 `.ai/release-readiness.json`。它是机器可校验的检查索引，不替代 `20_RELEASE_CHECKLIST.md`、Release Notes 或用户 Gate；缺失、过期或未完成时提示 WARN，不自动批准或阻塞普通工作。
 
 最低检查集合：
 
@@ -1327,7 +1321,7 @@ LARGE     NORMAL + typecheck / unit / integration / e2e / performance / migratio
 REGULATED LARGE + privacy_compliance / traceability / security_approval / audit_retention
 ```
 
-每个检查必须有 `status: PASS` 和至少一个 `evidence_refs`；`LARGE` / `REGULATED` 的 READY 记录还必须有 reviewed_at、approved_by，并引用已定义的 workstream。Stage 20 Gate 仍由用户确认；检查 PASS 不自动通过 Gate。
+需要把 readiness 标记为 READY/RELEASED 时，再为检查补充 `status: PASS`、`evidence_refs` 及适用的 reviewed_at、approved_by 和 workstream。Stage 20 Gate 仍由用户确认；检查 PASS 不自动通过 Gate。
 
 # 18. `.ai/registry.yaml` — Source / Dependency / Context Registry
 
@@ -1354,8 +1348,8 @@ Critical Skill → Host / Discovery / Version / Last Verified
 | Project State | `.ai/state.yaml` | always-minimal |
 | Decisions | `.ai/decisions.md` | referenced-only |
 | Project Governance Profile | `.ai/project-profile.json` | always-minimal |
-| Transition Audit | `.ai/audit/transitions.jsonl`（所有项目） | stage/on-demand |
-| Release Readiness | `.ai/release-readiness.json` | release-only |
+| Transition Audit | `.ai/audit/transitions.jsonl`（按需） | stage/on-demand |
+| Release Readiness | `.ai/release-readiness.json`（按需） | release-only |
 | Requirements | 当前有效的 Stage 08 Requirements Artifact（可继承自前一 Cycle） | stage/task |
 | Visual DNA | 当前有效的 Stage 10 Visual DNA Artifact（可继承自前一 Cycle） | ui-task |
 | Design Rules | 当前有效的 Stage 10 Design System Artifact（可继承自前一 Cycle） | ui-task |

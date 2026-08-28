@@ -5,41 +5,6 @@
   "status": "PENDING",
   "cycle": "CYCLE-001",
   "stage": 1,
-  "input_type": "single_select",
-  "question": "需要确认的决策问题",
-  "why_now": "为什么当前 Stage 必须得到用户确认",
-  "decision_card": {
-    "impact": {
-      "code": "对代码的影响",
-      "documentation": "对文档和 Artifact 的影响",
-      "time": "对时间和工作量的影响"
-    },
-    "confirmation_method": "回复选项 ID，并说明理由"
-  },
-  "options": [
-    {
-      "id": "A",
-      "title": "方案 A",
-      "summary": "方案 A 的核心结果",
-      "tradeoffs": [
-        "优点：方案 A 的主要收益",
-        "缺点：方案 A 的主要代价"
-      ]
-    },
-    {
-      "id": "B",
-      "title": "方案 B",
-      "summary": "方案 B 的核心结果",
-      "tradeoffs": [
-        "优点：方案 B 的主要收益",
-        "缺点：方案 B 的主要代价"
-      ]
-    }
-  ],
-  "recommended": "A",
-  "allow_custom": true,
-  "allow_multiple": false,
-  "allow_rank": false,
-  "evidence_refs": [],
-  "affected_areas": []
+  "input_type": "free_text",
+  "question": "需要确认的决策问题"
 }

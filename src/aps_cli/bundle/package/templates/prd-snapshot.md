@@ -1,7 +1,7 @@
 # PRD Snapshot
 
 > 这是当前 Cycle 的可选派生汇总，不是新的 Stage，也不是第二个 Requirements / Decision Source。
-> 每个关键结论必须引用当前有效的 Stage Artifact 或 `DEC-*`。
+> 关键结论建议引用当前有效的 Stage Artifact 或 `DEC-*`；来源不完整时保留说明并提示复核。
 
 ## Artifact Contract
 
@@ -10,7 +10,7 @@
 - Outputs：本页的可读产品汇总和 Source Map。
 - Acceptance Criteria：关键结论都有可解析的来源引用；未确定项和阻塞项没有被写成已确认事实。
 - Current Status：DRAFT / ACTIVE / SUPERSEDED
-- Source State Revision：填写生成本 Snapshot 时 `.ai/state.yaml` 的 revision；状态变化后必须更新
+- Source State Revision：可填写生成本 Snapshot 时 `.ai/state.yaml` 的 revision，状态变化后按需更新
 - Blocking Decisions：`DEC-XXX` 或 `None`
 - Next Stage：`Stage 09 UX` / `Stage 10 UI` / `Stage 12 Validation` / 按当前 Transition Contract 填写
 
@@ -77,4 +77,4 @@ Source refs：
 
 ## Update Rule
 
-来源 Artifact、Decision、Scope 或验证结果变化时，先执行 Impact Analysis，再更新本 Snapshot。Snapshot 不替代来源 Artifact、Gate、Validation 或 Transition Contract。
+来源 Artifact、Decision、Scope 或验证结果变化时，按实际影响更新本 Snapshot。Snapshot 不替代来源 Artifact、Gate、Validation 或 Transition Contract。

@@ -4,8 +4,8 @@
 **Status:** `ACTIVE`  
 **Companion Artifact Standard:** `1.3.6`
 
-> 本标准定义 AI 参与产品开发时的统一生命周期、Stage Contract、Gate、Agent Runtime、Skill、验证、追踪和变更规则。  
-> AI 必须按阶段推进；不得用未确认假设替代重大决策，不得绕过关键 Gate，不得把聊天内容视为已经落盘的项目状态。  
+> 本标准定义 AI 参与产品开发时的统一生命周期、Stage Contract、Gate、Agent Runtime、Skill、验证、追踪和变更参考。
+> 23 个 Stage/Gate 用于导航和状态记录；普通流程条件不自动成为 CLI 阻塞。不得用未确认假设替代重大决策，不得把聊天内容视为已经落盘的项目状态。
 > 项目产物的创建、状态、Source of Truth、同步和生命周期由`.ai/standards/artifact-state.md`约束。
 
 ---
@@ -89,7 +89,7 @@ CYCLE-XXX    开发周期
 
 ## 0.3 Stage Contract
 
-所有 Stage MUST 具有明确的 Transition Contract，但不同 Stage 类型不强制伪造相同的 Gate。
+所有 Stage SHOULD 具有明确的 Transition Contract，但不同 Stage 类型不强制伪造相同的 Gate；缺少普通流程记录时可继续工作并在 status/doctor 中提示。
 
 Stage Type：
 
@@ -107,7 +107,7 @@ ROUTER
 不直接产出产品功能，而把 Change 路由回真正受影响的 Stage。Stage 22 使用。
 ```
 
-每个 Stage 至少可确定：
+需要推进或交接时，每个 Stage 通常可确定：
 
 ```text
 Stage ID / Name
@@ -125,35 +125,27 @@ Downstream Dependencies
 
 ### 0.3.1 Stage Entry / Planning
 
-以下高影响 Stage 在首次进入、从上游返修回来，或范围 / 方向发生变化时，必须先有一份可审查且已接受的计划；用户在当前对话中已接受的计划即可，不要求重复写成第二份文件：
+计划是复杂任务的辅助工具，不是固定 Stage 清单、Gate 或 CLI 执行前提。任务需要时可以在当前对话或工作区写一份简短计划；简单任务直接执行并做相关验证。原生 Codex Plan 模式可选，Host 不支持时继续使用普通会话。
 
-```text
-Stage 01、05、06、07、08、09、10、13、14、15、16、20
-```
-
-Stage 22 在存在 Active Change 时同样需要计划。计划至少说明输入、约束、候选方案、风险、受影响 Artifact、验证方式和下一步；该确认只约束高影响 Stage 的入口，不等于每个普通 Stage PASS 都要再次向用户索取确认。普通对话轮次不需要重复规划。
-
-原生 Codex Plan 模式是可选的 Host 辅助能力，不是 Gate 或执行前提。若 Host 无法打开或确认该模式，Agent 不得声称已经切换；改为引用或补齐已接受的计划后继续执行，不阻塞执行。`aps status` 和 handoff 可以提示计划需求，但不得把它显示为 Mode Gate 或据此拒绝启动普通 Codex 会话。
-
-Research Stage 02–04 默认不要求正式计划；只有研究范围、方法或证据成本复杂时，才先用简短计划设计研究方案。实际研究仍必须在当前对话直接回答原始问题并输出 Research Brief。
+Stage 22 是可用的变更记录和路由位置。只有实际改变已确认契约、Scope 或下游影响时才需要记录 Change 并路由；普通局部改动不因 Stage 编号自动暂停。
 
 ### 0.3.2 Project Risk Profile / Workstream
 
-Bootstrap MUST 让用户确认一个项目风险级别，并写入 `.ai/project-profile.json`：
+项目可以按需要记录风险级别，存在 `.ai/project-profile.json` 时 APS 会检查；缺失时不猜测为 `NORMAL`，也不阻塞普通流程：
 
 | Machine ID | 中文含义 | 额外要求 |
 |---|---|---|
-| `NORMAL` | 普通 | 保留基础验证、回滚和最小 Transition 审计证据 |
-| `LARGE` | 大型 | 按模块 / 工作流拆分 `workstreams`，增加集成、性能、迁移、监控、灾备、值班、外部验收和更完整的 Transition 审计证据 |
+| `NORMAL` | 普通 | 保留基础验证和回滚；需要历史追踪时再记录 Transition 审计 |
+| `LARGE` | 大型 | 按模块 / 工作流拆分 `workstreams`，按实际影响增加集成、性能、迁移、监控、灾备、值班和外部验收；审计深度按需增加 |
 | `REGULATED` | 强合规 | 在大型项目要求上增加隐私 / 合规、可追溯性、审批和审计留存证据 |
 
-风险级别不是新的 Stage，也不能跳过任何当前 Stage。它只决定 Evidence、Release readiness 和审计深度；当数据敏感性、部署拓扑、Scope 或合规义务变化时，必须重新评估级别。大型项目可以并行执行不同 workstream 的 Task / Artifact，但全局 Cycle、Gate 和状态仍由 Coordinator 单写。
+风险级别不是新的 Stage，也不能替代实际安全、质量和发布判断。需要更深 Evidence、Release readiness 或审计时再补齐；大型项目可以并行执行不同 workstream 的 Task / Artifact，但全局 Cycle、Gate 和状态仍由 Coordinator 单写。
 
-所有项目 MUST 追加 `.ai/audit/transitions.jsonl`；`LARGE` / `REGULATED` 的记录和 Evidence 深度更高。每条记录至少包含 from/to state、原因、Actor 和 Evidence refs；记录必须单调追加，最后一条 `to_state` 必须与 `.ai/state.yaml` 一致。它补足当前状态快照不能证明历史流转的问题，但不替代 Git、Decision Log 或 Stage Artifact。
+`.ai/audit/transitions.jsonl` 是可选的历史记录。存在时应包含 from/to state、原因、Actor 和 Evidence refs；格式或链路问题只产生提示，不能替代 Git、Decision Log 或 Stage Artifact。
 
 Transition 审计只能证明当前文件中的格式、顺序和状态链路可校验，不能单独证明历史行未被人为修改或 Evidence 真实有效；需要完整可信度时，仍须结合 Git 历史、仓库权限和人工审查。
 
-每个 Stage 在完成、阻塞、暂停或切换对话前，MUST 在当前对话输出一页 Stage User Brief。普通 Stage 满足 Artifact、Verification 和 blocker 条件后，可记录 `COMPLETE + PASS` 并直接进入 Transition Contract 指定的下一 Stage，不要求用户额外确认“Stage PASS”。固定包含：
+阶段完成、阻塞、暂停或交接时，可以在当前对话输出一页 Stage User Brief。普通 Stage 完成后可记录 `COMPLETE + PASS` 并按 Transition Contract 继续，不要求额外的“Stage PASS”确认。以下字段是推荐内容，不是普通流程门禁：
 
 ```text
 目标：这一阶段解决什么问题
@@ -162,15 +154,15 @@ Transition 审计只能证明当前文件中的格式、顺序和状态链路可
 未完成：还缺什么
 用户决策：需要确认什么
 确认影响：确认后进入哪一步
-下一阶段入口提醒：Transition Contract 指定的下一 Stage；高影响 Stage 复用已接受计划或先写简短计划，原生 Plan 模式可选
+下一阶段入口提醒：Transition Contract 指定的下一 Stage；复杂任务可复用已接受计划或先写简短计划，原生 Plan 模式可选
 验证结果：哪些检查已经通过
 ```
 
-Stage User Brief 是用户交接摘要，不是完成证明；Stage Artifact 的 Artifact Contract、验收条件和 Gate / Transition 仍必须满足。
+Stage User Brief 是用户交接摘要，不是完成证明；实际需要的 Artifact、验收条件和 Gate / Transition 仍按任务风险与用户目标执行。
 
 ### 0.3.3 Proportional Change / Incremental Validation
 
-23 个 Stage 是统一的治理契约，不代表每个小改动都要从头重跑。变更先按影响范围分类：
+23 个 Stage 是统一的导航契约，不代表每个小改动都要从头重跑。变更按实际影响范围处理：
 
 ```text
 仍在已确认 Scope / Requirements 内，且不改变已确认 UX、UI、Architecture、Security 或 Release 条件
@@ -179,30 +171,28 @@ Stage User Brief 是用户交接摘要，不是完成证明；Stage Artifact 的
 → 执行该 Task 和受影响链路的最小必要验证
 
 改变已通过 Gate 的内容、用户行为 / 流程、设计基座、技术 / 安全约束，或由真实反馈触发
-→ 进入 Stage 22 Iterate
-→ 路由到受影响的最早 Stage
-→ 重新验证该 Stage 及其下游依赖
+→ 需要时记录 Change 并使用 Stage 22 Iterate 路由
+→ 重新验证实际受影响的 Stage 及其下游依赖
 
 改变产品目标、重大 Scope、风险级别或 Release 条件
 → 进入 Change Control 和用户决策
 → 必要时在当前 Cycle 关闭后创建新的 Rebaseline Cycle
 ```
 
-每个 Change 的 Impact Analysis MUST 记录：Change ID、Scope Delta、最早受影响 Stage、受影响 Artifact / 文件、仍可复用的 Artifact 及理由、需要重新验证或 supersede 的 Artifact、最小验证集合、触发完整回归的条件、Release 影响和 Decision refs。推荐使用 `.ai/templates/change-log.md` 作为记录起点。
+需要记录 Change 时，建议说明 Change ID、Scope Delta、受影响 Stage/Artifact、复用范围、验证集合和 Release 影响；可使用 `.ai/templates/change-log.md` 作为起点。
 
-增量验证可以减少无关重复检查，但不得省略当前 Stage、受影响下游 Stage、Gate 或 Release readiness 的必需验证。依赖图缺失、引用无法解析或影响范围不确定时，必须采用更宽的验证范围，而不是乐观地只跑局部检查。
+增量验证可以减少无关重复检查。依赖图缺失、引用无法解析或影响范围不确定时，再扩大验证范围；不把普通记录缺失伪装成安全阻塞。
 
 规则：
 
 ```text
-Preconditions 未满足 → 不得开始主执行
+明确的安全前置条件未满足 → 不得开始主执行
 Input 缺失但可通过代码 / 调研 / 已有 Artifact 确定 → AI 自行补齐
-Input 缺失且属于关键决策 → 标记 blocker；GATED Stage 使用 GateStatus=PENDING，其他 Stage 使用 stage_status=BLOCKED
-Required Output 未落盘 → GATED Stage 不得 PASS
-Required Verification 未执行 → GATED Stage 不得 PASS
+Input 缺失且属于关键决策 → 标记 user_decision blocker；GATED Stage 使用 GateStatus=PENDING，其他 Stage 使用 stage_status=BLOCKED
+用户或发布目标明确要求的 Output / Verification 未完成 → 不记录对应的完成状态
 GateStatus=REVISE → 路由回真正产生问题的上游 Stage
 GateStatus=STOP → 停止当前开发周期
-EXECUTION_LOOP / OBSERVATION_LOOP / ROUTER → 必须定义明确 Exit / Route 条件，不得默认等同 PASS
+EXECUTION_LOOP / OBSERVATION_LOOP / ROUTER → 按需要定义 Exit / Route 条件，不默认等同 PASS
 ```
 
 本标准各阶段中的：
@@ -402,12 +392,7 @@ Regression
 
 ## 0.10.1 研究结果交付
 
-Market Research、Product Research，以及其他产生外部证据的 Research 完成后，MUST 双通道交付：
-
-1. 在当前对话中先直接回答原始研究问题，再分析关键证据、推断、限制和建议，最后输出一份可读的 Research Brief，不得只写入 Artifact 后静默结束。多个问题必须逐项回答；Brief 至少包含研究问题 / 范围、方法与来源、关键发现、结论 / 建议、未确定项和待决策项；关键内容使用 `Fact`、`Inference`、`Hypothesis`、`Decision` 标记。CLI 可用时运行 `aps research brief <ARTIFACT>` 生成摘要，但不能替代直接回答和分析。
-2. 将完整报告、证据明细和来源引用落盘到对应 Stage Artifact。对话摘要不是第二个 Source of Truth；报告过长时在对话中输出摘要与 Artifact 路径，不复制全部原始材料。
-
-研究结论若触发用户决策，必须在同一对话中明确展示待决策问题，并按 Decision Request 流程登记，不得只留下文件阻塞状态。
+Market Research、Product Research，以及其他产生外部证据的 Research 可以在当前对话直接回答，也可以按需要把完整报告落盘到 Stage Artifact。`aps research brief <ARTIFACT>` 只是摘要展示工具；缺少某些 Brief 字段时给出 WARN，不阻塞普通工作。若研究结论确实需要用户选择，再登记 `user_decision` blocker。
 
 ## 0.11 必须向用户提问的情况
 
@@ -431,7 +416,7 @@ Market Research、Product Research，以及其他产生外部证据的 Research 
 
 可以通过调研、代码、文档或现有上下文确定的问题，不向用户提问。
 
-决策交互必须在当前对话完成，不依赖 Host UI。Agent MUST 先输出完整决策卡：说明为什么需要决策、逐项说明每个选项的优点、缺点、适用条件和主要风险、给出推荐及依据、说明对代码 / 文档 / 时间的影响，并明确用户如何确认。Decision Request MUST 保留完整候选集和真实输入类型；多选、排序、自由输入、数字或复杂决策可以分轮提问，但不得静默删除候选项或把约束伪装成单选。
+决策交互应在当前对话完成，不依赖 Host UI。Decision Request 的最小字段是问题、状态、Cycle/Stage、输入类型、schema version 和 id；候选项、取舍、推荐、影响和确认方式按问题需要填写。需要展示时可以使用完整决策卡，但不要求普通请求填写固定表单；不得把自由输入或复杂问题伪装成单选。
 
 ## 0.12 研究结论标记
 
@@ -470,7 +455,7 @@ STOP
 终止当前开发周期。
 ```
 
-`user_decision`、`external_dependency`、`missing_evidence`、`runtime_failure` 等属于 blocker 类型，不是额外 GateStatus；项目同时存在多个 blocker 时必须全部保留。
+`user_decision`、`external_dependency`、`missing_evidence`、`runtime_failure` 等可以作为 blocker 记录，不是额外 GateStatus；只有待处理 `user_decision`、明确 `HOLD` / `STOP`、运行状态不可解析或安全/完整性错误自动暂停 CLI，其他普通 blocker 只作提示并保留记录。
 
 只有包含需要用户决策、重大范围 / 方向变化、HOLD / STOP 或 Release approval 的 Gate 才需要用户确认；普通 Stage PASS 不要求额外确认。
 
@@ -1379,7 +1364,7 @@ MVP / Core Loop / 功能     → Stage 07 Function
 验收与指标                 → Requirements / Validation / QA
 ```
 
-PRD Snapshot 的每个关键结论 MUST 能回指一个当前有效 Artifact 或 `DEC-*`；来源变化时先做 Impact Analysis，再更新汇总。PRD Snapshot 缺失或过期时，不得替代 Requirements、UX、Architecture 或 Security 的验收，也不得单独推动 Stage Transition。
+PRD Snapshot 的关键结论最好回指当前有效 Artifact 或 `DEC-*`；来源变化时按需更新汇总。PRD Snapshot 缺失或过期时只作提示，不替代 Requirements、UX、Architecture 或 Security 的验收，也不单独推动 Stage Transition。
 
 ## 检查
 
@@ -1399,7 +1384,7 @@ PRD Snapshot 的每个关键结论 MUST 能回指一个当前有效 Artifact 或
 
 ## Gate
 
-如果某项约束会显著改变 UX、架构或成本，向用户提问。若创建 PRD Snapshot，必须确认来源引用可解析；Stage 08 Gate 仍以 Requirements Artifact、验证和用户决策为准。
+如果某项约束会显著改变 UX、架构或成本，向用户提问。若创建 PRD Snapshot，按需检查来源引用；Stage 08 的实际目标和验证仍以 Requirements Artifact 为准。
 
 ---
 
@@ -3265,7 +3250,7 @@ Change
 AI → AI Spec / Eval
 ```
 
-Stage 22 先完成 Impact Analysis，再决定是否需要路由。已确认 Scope 内且没有改变任何已确认契约的局部 Task 可以留在当前 Stage；一旦改变已通过 Gate 的内容或引入新的行为 / 约束，不能用局部验证代替 Stage 22 和最早受影响 Stage 的重新验证。
+Stage 22 可用于记录 Impact Analysis 和路由。已确认 Scope 内且没有改变已确认契约的局部 Task 可以留在当前 Stage；只有实际影响下游契约或验证范围时，才路由到受影响的最早 Stage。
 
 所有新增需求先进入 Backlog。
 
@@ -3283,17 +3268,17 @@ Stage 22 先完成 Impact Analysis，再决定是否需要路由。已确认 Sco
 - [ ] 每个 Signal 已聚类或明确丢弃原因
 - [ ] 选中的 Change 有根因和证据
 - [ ] Change 已绑定稳定 ID
-- [ ] 已完成 Impact Analysis
-- [ ] 已路由到真正负责的 Stage
-- [ ] 未绕过 Scope / Gate 直接进入 Build
+- [ ] 需要时已完成 Impact Analysis
+- [ ] 需要时已路由到真正负责的 Stage
+- [ ] 未绕过明确的安全或用户确认边界直接进入 Build
 
 ## Transition Contract
 
 Stage Type：`ROUTER`。
 
 ```text
-存在已批准 Change → 路由至受影响的最早 Stage，并按该 Stage Contract 重新验证
-仅有未批准 Backlog → 不直接开发；返回 Observe 或进入 Cycle Review
+存在实际影响的 Change → 路由至受影响的最早 Stage，并按该 Stage 重新验证
+仅有记录性 Backlog → 可返回 Observe、进入 Cycle Review 或继续当前工作
 没有需要本 Cycle 处理的 Change → Stage 23 Cycle Review
 ```
 
@@ -3468,7 +3453,7 @@ Skill 修改前应先把真实 Failure Signal 固化为 Eval Case；修改后必
 
 # 24. Change Control
 
-任何已通过 Gate 的内容被修改，必须先记录：
+任何已通过 Gate 的内容被修改时，按影响需要记录：
 
 ```text
 Change ID
@@ -3491,9 +3476,9 @@ Release 影响
 需要重新验证什么
 ```
 
-重大变更必须向用户提问。
+会改变用户目标、重大 Scope、核心契约或安全边界的变更必须向用户提问。
 
-如果变更仍在已确认 Scope 内，且没有改变已确认的产品、交互、设计、技术、安全或 Release 契约，可作为当前 Task 的增量修改；仍需记录受影响文件和验证结果。否则必须进入 Stage 22，由 Router 将 Change 路由至受影响的最早 Stage。Router 不产生 PASS，也不允许用“只改了一个文件”跳过下游验收。
+如果变更仍在已确认 Scope 内，且没有改变已确认的产品、交互、设计、技术、安全或 Release 契约，可作为当前 Task 的增量修改并做相关验证。否则建议使用 Stage 22 记录并路由到受影响的最早 Stage。Router 不产生 PASS，也不允许用“只改了一个文件”掩盖实际的下游影响。
 
 典型回退：
 

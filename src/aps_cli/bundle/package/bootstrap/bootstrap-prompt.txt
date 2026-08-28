@@ -1,75 +1,48 @@
-使用本项目内的 AI Project Standard 作为权威开发规范：
+使用本项目内的 AI Project Standard 作为开发参考：
 
-- Lifecycle Standard: `.ai/standards/lifecycle.md`
-- Artifact & State Standard: `.ai/standards/artifact-state.md`
+- Lifecycle Standard：`.ai/standards/lifecycle.md`
+- Artifact & State Standard：`.ai/standards/artifact-state.md`
 
 第一次使用：
-1. 新项目从 `aps init` 开始；已有项目从 `aps resume` 开始；只想复制 handoff 时再加 `--no-launch`。不要用 `init` 覆盖旧项目。普通 Stage 满足 Artifact 和 Validation 后直接推进；仅在需要用户决策的 Gate 或 Release 边界停止。
-2. 将 CLI 打印的完整 `APS Agent Handoff` 代码块发送到当前 Agent Host；不要依赖剪贴板或项目内 handoff 文件。
-3. Bootstrap 完成后运行 `aps doctor`，再运行 `aps status` 确认当前 Cycle、Stage、Gate、blocker 和下一步。
-4. Bootstrap 必须让用户确认项目风险级别：`NORMAL`（普通）、`LARGE`（大型）或 `REGULATED`（强合规），并将结果写入 `.ai/project-profile.json`；不要根据项目名称猜测级别。
+1. 新项目从 `aps init` 开始；已有项目从 `aps resume` 开始；只想复制 handoff 时加 `--no-launch`。`init` 不覆盖旧项目。
+2. 将 CLI 打印的完整 `APS Agent Handoff` 代码块发送到当前 Agent Host。
+3. Bootstrap 后运行 `aps doctor` 和 `aps status`，确认当前 Cycle、Stage、Gate、blocker 与提示。
 
-APS CLI 恢复边界：普通已有项目使用 `aps resume`；只有检测到 APS 可识别的半安装或损坏残留时使用 `aps upgrade` 修复；空目录使用 `aps init`。托管文件冲突必须先人工合并 `.ai/incoming/<version>/`，再运行 `aps upgrade`；运行状态损坏时先运行 `aps doctor --standard-only`。除非明确接受备份后覆盖，不要使用 `--force-managed`。
+APS CLI 边界：`resume` 负责接管或恢复，`upgrade` 只更新 Standard；空目录使用 `init`。托管文件冲突先人工比较 `.ai/incoming/<version>/`，不自动合并；只有明确接受备份后覆盖时才使用 `--force-managed`。运行状态损坏、项目路径不安全、manifest 或托管文件完整性失败时，先修复安全问题。
 
-遇到阻塞后的恢复：
-- 先运行 `aps status`，按唯一的 `NEXT` 操作处理；不要猜测状态或跳过 Gate。
-- 运行状态缺失或无法解析时，先运行 `aps doctor --standard-only` 获取第一项问题；`doctor` 不会自动修复坏状态，需在 Host 中人工修复 `.ai/state.yaml` 后再运行 `aps resume --no-launch`。
-- Standard 版本不匹配或托管文件冲突时，先审查 `aps upgrade` 的报告和 `.ai/incoming/`，不要自动合并；需要覆盖时才显式使用 `--force-managed`。
-- 待决策时使用 `aps decision show/list`，在当前对话完成决策卡分析，再运行 `aps decision answer` 或 `aps decision cancel`。
-- 仍不确定时保留 blocker，向用户请求决策；`resume` 只恢复，不创建新 Cycle。
-- `.ai/project-profile.json` 缺失或无法解析时，不得猜测为 `NORMAL`；按模板补齐风险基线后再继续。
-- 所有项目必须维护 `.ai/audit/transitions.jsonl`；`LARGE` / `REGULATED` 还必须按模块或工作流填写 `workstreams`；审计链最后一条记录必须与 `.ai/state.yaml` 一致。
-- 进入 Release 边界前，按风险级别生成 `.ai/release-readiness.json`；所有该级别要求的检查必须有 `PASS` 和 Evidence ref。Release approval、重大范围 / 方向变化和其他明确的用户决策仍单独保留为 Gate 语义；普通 Stage PASS 不要求用户额外确认。
+治理原则：
+- 23 个 Stage/Gate 用于导航和状态记录；普通流程条件、计划、风险档案、Registry、Transition audit、Release readiness、PRD Snapshot、Research Brief、Stage User Brief、Artifact Contract 和 Change 记录按实际需要使用，缺失或过期只提示。
+- 不自动猜测 `NORMAL`，不自动通过 Gate，不自动覆盖用户文件。普通任务可以继续；只有待处理 `user_decision`、明确 `HOLD` / `STOP` 或安全/完整性错误暂停。
+- `status`、`doctor` 和 handoff 的 `NEXT` 是可选建议，不要求唯一或必须执行。
+- 全局治理写入仍遵守 Single Writer、revision、锁和 compare-before-write；实际需要保留的 Artifact、状态变更和验证证据必须落盘。
 
-交接只携带当前 Stage / Task、直接上游有效 Artifact、明确引用的 Source 和当前 blocker；不要把完整 Standard、旧 Cycle 或无关 Research 复制进 handoff。
-
-不要先完整读取两份 Standard。按最小上下文加载执行。
+恢复提示：
+- 状态缺失或无法解析时运行 `aps doctor --standard-only`，人工修复 `.ai/state.yaml` 后再运行 `aps resume --no-launch`。
+- Standard 版本较旧、可选元数据缺失或不完整时，APS 会给出 WARN 并继续；需要更新时显式运行 `aps upgrade`。
+- 待决策时用 `aps decision show/list` 查看问题，回答或取消后运行 `aps decision answer/cancel`；回答只解除对应 blocker，不自动改变 Gate。
 
 Bootstrap 顺序：
-1. 检测 repo root、新项目 / 已有项目、当前 Agent Host 与当前生效的项目指令链。
-2. 先读取两份 Standard 的规范总则、Context Loading、Gate State Machine、Artifact Workspace / Registry、Agent Runtime 相关章节；之后只读取当前 Stage 所需章节。
-3. 读取或初始化根 `AGENTS.md`、`.ai/state.yaml`、`.ai/decisions.md`、`.ai/registry.yaml` 与 active cycle。已有内容不得无理由覆盖。
-4. 从 `.ai/templates/project-profile.json` 创建项目风险基线；向用户确认 `NORMAL` / `LARGE` / `REGULATED`，填写复核时间和 workstreams。大型项目按模块或工作流拆分，不增加新的 Stage。
-5. 检测当前 Host，并读取 / 初始化 `.ai/runtime/hosts/<HOST-ID>.yaml`；Host capability 不写成唯一全局项目状态。
-6. 恢复 Source of Truth、Cycle、Stage / Stage Type / stage_status、适用时的 gate_status、Scope、blockers、Active Change、Pending Decision refs 与 revision。
-7. 初始 Bootstrap 或每次 Stage / Gate / Cycle 变更都追加一条结构化 Transition 记录到 `.ai/audit/transitions.jsonl`；记录包含 from/to state、原因和 Evidence refs，不得删除或改写历史行。
-8. 已有项目先读取实际代码和当前有效 Artifact，判断真实 Stage；不要把旧项目伪装成新项目，也不要默认从 Build 开始。
-9. 普通任务只加载 `.ai/registry.yaml` 指向的当前 Stage / Task 最小必要 Source；旧 Cycle、历史研究和完整 Standard 按需加载。
-10. 每次修改前先判断是否仍在已确认 Scope / Requirements 内：没有改变已确认产品、交互、设计、技术、安全或 Release 契约的局部 Task 留在当前 Stage，只更新受影响 Artifact 并执行定向验证；改变已通过 Gate 的内容、用户行为、约束或由真实反馈触发的 Change 进入 Stage 22，使用 `.ai/templates/change-log.md` 做 Impact Analysis，保留有效 Artifact，沿 Registry 依赖闭包重新验证；依赖不清楚时采用更宽验证，不得用局部检查替代必需 Gate / Release 检查。
-11. 使用 Agent Skill 时，解析当前 Host 的项目级 discovery 位置，检查 Skill 结构、路径、同名冲突、触发与最小 Smoke Eval。未注册或未验证的 Skill 不得假装已生效。
-12. 若文档、代码、状态、Skill 与已确认 Decision 冲突：新增 blocker；GATED Stage 设 `gate_status=PENDING`，非 GATED Stage 设 `stage_status=BLOCKED`；不要自行选择真相。
-13. 执行当前 Stage Contract / Transition Contract；不要一次执行整个开发周期。
-14. 进入或恢复以下高影响 Stage 时，先确认当前对话已有一份可审查且已接受的计划：Stage 01、05、06、07、08、09、10、13、14、15、16、20。首次进入、从上游返修回来、或范围 / 方向发生变化时重新确认；Stage 22 在存在 Active Change 时同样执行。计划至少说明输入、约束、风险、受影响 Artifact、验证方式和下一步；每个普通对话轮次不重复规划。
-15. 原生 Codex Plan 模式可用于形成计划，但不是 Gate 或执行前提。若当前 Host 无法打开或确认该模式，不得假装已经切换；引用或补齐已接受的计划后继续，不阻塞执行。
-16. 全局治理写入遵守 Single Writer、revision 与 compare-before-write；子 Agent 不直接覆盖全局治理 Artifact。
-17. 只有满足当前 Transition / Gate 条件并完成 Validation 后才推进。普通 Stage 的 Artifact、验收条件、Verification 和 blocker 条件满足后，Agent / Coordinator 可直接记录 `COMPLETE + PASS` 并进入 Transition Contract 指定的下一 Stage，不要求用户额外确认“Stage PASS”。需要用户决策、重大范围 / 方向变化、HOLD / STOP 或 Release approval 时必须停止并请求用户确认。
-18. 每个 Stage 在完成、阻塞、暂停或切换对话前，必须在当前对话输出一页 Stage User Brief，固定包含：目标、输入、已完成、未完成、用户决策、确认影响、下一阶段入口提醒、验证结果。普通 Stage 输出简报后可直接推进；简报不替代 Artifact Contract、验收条件和 Gate / Transition。
-19. 用户需要 PRD 时，不创建新的 Stage；以 Stage 08 Requirements 为核心，按需使用 `.ai/templates/prd-snapshot.md` 生成派生汇总。每个关键结论引用当前有效 Artifact 或 `DEC-*`，PRD Snapshot 不替代 Requirements、UX、Architecture、Security 或 Gate。
+1. 检测 repo root、项目类型、当前 Agent Host 和生效的项目指令链。
+2. 按最小上下文读取两份 Standard 和当前 Stage 所需章节；不预加载旧 Cycle 或无关 Artifact。
+3. 读取或初始化 `.ai/state.yaml` 和 active cycle；按需读取或初始化 `.ai/decisions.md`、`.ai/registry.yaml`，已有内容不得无理由覆盖。
+4. `.ai/project-profile.json`、`.ai/audit/transitions.jsonl`、`.ai/release-readiness.json` 等元数据存在时检查；缺失或过期记录 WARN，不猜测内容。
+5. 检测当前 Host，并按需读取或初始化 `.ai/runtime/hosts/<HOST-ID>.yaml`。
+6. 从 state 恢复 Cycle、Stage/Stage Type、stage_status、gate_status、Scope、blockers、Active Change、Pending Decision refs 和 revision。
+7. 需要审计时追加 Transition 记录，不删除或改写历史；审计是记录和校验辅助，不是普通流程的启动门禁。
+8. 已有项目先读取实际代码和有效 Artifact，判断真实工作位置；不要把旧项目伪装成新项目，也不要默认从 Build 开始。
+9. 局部变更留在当前 Stage 并做相关验证；只有实际改变已确认契约、Scope 或下游影响时，才使用 `.ai/templates/change-log.md` 记录影响并路由到受影响 Stage。Stage 22 是可用的变更记录路由，不是固定前置门禁。
+10. 使用 Agent Skill 时检查路径、结构、同名冲突和可用性；未验证的 Skill 不得假装生效。
+11. 文档、代码、状态、Skill 与已确认 Decision 冲突时，保留 `user_decision` blocker，等待用户处理，不自行猜测。
+12. 执行当前 Stage 的实际任务和验证；不因普通记录缺失而停止，也不一次执行整个开发周期。
+13. 全局治理写入使用 Single Writer、锁、revision 和 compare-before-write；并行任务不得覆盖共享状态。
+14. 只有明确 HOLD/STOP、待处理用户决策、安全错误或用户要求的确认才暂停。普通 Stage 完成后可按 Transition Contract 记录状态，不要求额外的唯一 NEXT、计划或“Stage PASS”确认。
+15. 需要交接时可输出简短 Stage User Brief；需要产品单页时可按需从 Stage 08 Artifact 生成 PRD Snapshot。两者都是辅助记录，不替代实际代码、Artifact 和验证。
 
-Stage User Brief 最小模板（只在完成、阻塞、暂停或交接时填写，不要每轮对话重复）：
-```text
-目标：<这一阶段解决什么问题>
-输入：<依赖的前置结果>
-已完成：<实际产出>
-未完成：<剩余缺口>
-用户决策：<已确认或待确认事项>
-确认影响：<确认后进入哪一步>
-下一阶段入口提醒：<Transition Contract 指定的下一 Stage；高影响 Stage 复用已接受计划或先写简短计划，原生 Plan 模式可选>
-验证结果：<已通过的检查>
-```
+研究和决策：
+- Research 可在当前对话直接回答并按需落盘完整报告；`aps research brief <ARTIFACT>` 会展示已有摘要。字段不完整时提示补充，不阻塞安全的普通工作。
+- Decision Request 的最小必填字段是 `question`、`status`、`cycle`、`stage` 和 `input_type`（另含 schema/id）；options、tradeoffs、recommendation、decision_card 和 impact 按问题需要填写。待处理请求仍暂停对应业务路径。
+- 用户回答后运行 `aps decision answer <DECISION-ID> <ANSWER>`；它只解除对应 blocker，Gate 仍由 Agent 根据实际 Artifact 和验证更新。
 
-Market Research / Product Research 完成后，当前对话必须先直接回答原始研究问题，再分析关键证据，最后输出 Research Brief；多个问题必须逐项回答。Brief 至少说明范围、方法与来源、关键发现、结论 / 建议、未确定项和待决策项；完整报告仍要落盘到对应 Stage Artifact。CLI 可用时运行 `aps research brief <ARTIFACT>` 生成可直接展示的摘要，但不能替代直接回答和分析。禁止只写文档后静默完成。
+涉及前端/UI 时，Registry、Design System、Token、Component、Pattern、Motion 和项目 Skill 有记录则优先复用；缺失时记录提示并使用已验证的项目能力。
 
-能够通过调研、代码、已有 Artifact 或已确认 Decision 确定的问题直接处理。
-遇到关键不确定、方案冲突、重大产品 / 技术 / UI 取舍、需要改变已确认内容或扩大 Scope 时，新增 `user_decision` blocker，由我决策。
-
-需要用户决策时：
-1. 在当前 Cycle / Stage 的 `decision-requests/DEC-XXX.json` 创建 schema version 2 的结构化 Decision Request，并保留完整候选项、证据、推荐项、取舍、代码 / 文档 / 时间影响和明确确认方式。
-2. 运行 `aps decision request <REQUEST-FILE>` 登记 blocker；没有 CLI 时按同一规则直接更新 `.ai/state.yaml`。
-3. 在当前对话中先逐项分析每个选项的优点、缺点、适用条件和主要风险，再输出结构化问题；如果给出推荐，说明推荐依据以及什么新证据会改变推荐。保留完整候选项，不受 Host UI 或 2~3 个选项限制。多选、排序、自由输入、数字等类型按 Decision Request 的 `input_type` 处理，复杂问题可以分轮提问。
-4. 用户回答后运行 `aps decision answer <DECISION-ID> <ANSWER>`，或等价地写入 `.ai/decisions.md`、解除 blocker 并递增 state revision。
-5. 用户选择不等于 Gate PASS；完成 Artifact 和验证后，才按当前 Transition Contract 更新 Gate。
-
-涉及前端 / UI 时，必须从 Registry 解析 Design System Source、Visual Reference、Token / Component / Pattern / Motion Source 和项目级 Design System Agent Skill；按 Reuse → Compose → Extend → Create 执行。若 Skill 无法被当前 Host 发现或验证失败，先修复 Runtime / Adapter 或使用 Registry 中已记录 fallback。
-
-所有标记为 Artifact、状态变更或 Gate Evidence 的内容必须实际落盘并通过对应 Validation；只在聊天中输出不视为完成。
+只在聊天中宣称完成不等于已经落盘；凡是实际需要作为状态、Artifact 或验证证据的内容，都要写入对应文件并检查写入结果。

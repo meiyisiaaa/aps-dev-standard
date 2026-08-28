@@ -24,17 +24,17 @@ sources:
     path: .ai/decisions.md
     status: ACTIVE
     load_policy: referenced-only
-  project_profile:
+  project_profile:  # optional risk metadata
     domain: Project Governance Profile
     path: .ai/project-profile.json
     status: ACTIVE
     load_policy: always-minimal
-  transition_audit:
+  transition_audit:  # optional history
     domain: Transition Audit
     path: .ai/audit/transitions.jsonl
     status: ACTIVE
     load_policy: stage/on-demand
-  release_readiness:
+  release_readiness:  # optional release checklist
     domain: Release Readiness
     path: .ai/release-readiness.json
     status: ACTIVE

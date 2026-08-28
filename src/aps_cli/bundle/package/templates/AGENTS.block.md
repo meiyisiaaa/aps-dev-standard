@@ -5,24 +5,21 @@
 - Lifecycle standard: `.ai/standards/lifecycle.md`
 - Artifact/state standard: `.ai/standards/artifact-state.md`
 - Runtime state: `.ai/state.yaml` when initialized
-- Source registry: `.ai/registry.yaml` when initialized
-- Decision log: `.ai/decisions.md` when initialized
-- Risk baseline: `.ai/project-profile.json` when initialized
-- Transition audit: all projects maintain `.ai/audit/transitions.jsonl`; deeper evidence for LARGE / REGULATED projects
-- Release readiness: `.ai/release-readiness.json` at the Release boundary
+- Source registry: `.ai/registry.yaml` when available
+- Decision log: `.ai/decisions.md` when available
+- Optional metadata: `.ai/project-profile.json`, `.ai/audit/transitions.jsonl`, `.ai/release-readiness.json`
 - Standards lint: `python .ai/tools/standards-lint.py --project-root . --host codex`
 
 Execution rules:
-- Resolve current Stage and Source of Truth from project governance files; do not copy dynamic project state into this file.
-- Use minimal context loading. Do not eagerly load complete Standards, old Cycles, or unrelated Artifacts for normal tasks.
-- Do not bypass Gate / Transition, Change Control, Scope Control, Security Rules, or confirmed Decisions.
-- Keep change cost proportional: an in-scope Task that does not change a confirmed contract may use a delta update and targeted verification; a new behavior or changed gated source must use Stage 22 Impact Analysis and route to the earliest affected Stage. Reuse valid Artifacts, revalidate the dependency closure, and never omit mandatory Stage / Gate / Release checks. Use `.ai/templates/change-log.md` when a Change record is required.
-- On first entry, upstream rework, or scope/direction change for Stage 01, 05, 06, 07, 08, 09, 10, 13, 14, 15, 16, or 20, reuse or create a concise accepted plan before material workspace changes. Stage 22 requires the same when an Active Change exists. Native Plan mode is optional; if unavailable, record the accepted plan and continue rather than creating a Host capability blocker.
-- When a `user_decision` blocker is required, present a decision card in the current conversation: why the decision is needed, every option's pros, cons, fit, and main risks, the recommendation, code/documentation/time impact, and the exact confirmation method. Use the full Decision Request and do not silently reduce multi-option or non-single-select decisions.
-- After Market Research or Product Research, answer the original research question directly in the current conversation, analyze the key evidence, then output a Research Brief and persist the full report in the Stage Artifact; use `aps research brief <ARTIFACT>` when available as supporting output, not as a substitute for the answer; do not finish silently after writing files.
-- Do not create a new PRD Stage. When a one-page product view is needed, use Stage 08 Requirements as the core and derive a PRD Snapshot from current Stage 05–09 Artifacts and `DEC-*` references; the Snapshot is not a second Source of Truth or Gate.
-- Once an ordinary Stage's Artifact, acceptance, Verification, and blocker conditions are satisfied, record `COMPLETE + PASS` and follow the Transition Contract without asking the user to confirm "Stage PASS" again. Stop for required user decisions, major scope/direction changes, HOLD / STOP, or Release approval.
-- Before a Stage is completed, blocked, paused, or handed to another conversation, output a one-page Stage User Brief in the current conversation with the goal, inputs, completed work, incomplete work, user decisions, confirmation impact, next-stage entry reminder, and verification results. The brief does not replace the Artifact Contract or its acceptance criteria.
-- Global governance writes use the project Single Writer / revision / compare-before-write rules.
-- For UI work, resolve the current Design System sources and project-level design Skill from the Registry. Do not assume a Skill exists or is valid until registered and verified.
+- Resolve current Stage and Source of Truth from project files; do not copy dynamic state into this file.
+- Use minimal context loading. Read complete Standards, old Cycles, and unrelated Artifacts only when the task needs them.
+- Treat the 23 Stage/Gate model as navigation and state recording. Ordinary flow conditions, plans, profiles, audits, release checklists, PRD Snapshots, Research Briefs, Stage User Briefs, Artifact Contracts, and Change records are used when useful; missing or stale auxiliary records produce a warning.
+- Do not guess missing metadata, auto-pass a Gate, or overwrite user files. Pause only for unsafe paths, invalid runtime state, manifest/managed-file integrity failures, unconfirmed overwrite, a pending `user_decision`, or explicit `HOLD` / `STOP`.
+- Keep change cost proportional. Stay in the current Stage for local work; record a Change and route through Stage 22 only when the actual impact needs it. Use `.ai/templates/change-log.md` as an optional starting point.
+- Decision Requests need the question, status, Cycle/Stage, input type, schema version, and id. Options, tradeoffs, recommendation, impact, and confirmation details are optional. A pending user decision still pauses its business path; answering it only clears that blocker.
+- Research may be answered directly and persisted when needed. `aps research brief <ARTIFACT>` is a display helper; incomplete optional fields do not block ordinary work.
+- A PRD Snapshot, Stage User Brief, or Artifact Contract is an auxiliary record when the task benefits from it; it does not create another Stage or automatic Gate.
+- `NEXT` output is guidance, not a unique required command. Native Plan mode and risk/profile/release metadata are optional unless the user explicitly needs them.
+- Global governance writes use the project Single Writer / lock / revision / compare-before-write rules. Actual state, Artifact, or verification evidence that the task relies on must be written and checked.
+- For UI work, reuse registered Design System sources and project Skills when available; missing optional registry entries are warnings, not a reason to invent or block a normal implementation.
 <!-- AI-PROJECT-STANDARD:END -->

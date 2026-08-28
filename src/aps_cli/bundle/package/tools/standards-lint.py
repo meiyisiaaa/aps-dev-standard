@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import re
+import stat
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -62,6 +63,24 @@ class Report:
         return 1 if self.errors else 0
 
 
+def file_status(path: Path) -> str:
+    """Return a safe file classification without following links or reparse points."""
+    try:
+        if path.is_symlink():
+            return "unsafe"
+        if os.name == "nt":
+            attributes = getattr(os.lstat(path), "st_file_attributes", 0)
+            if attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+                return "unsafe"
+        if not path.exists():
+            return "missing"
+        return "file" if path.is_file() else "non-file"
+    except FileNotFoundError:
+        return "missing"
+    except OSError:
+        return "unreadable"
+
+
 def load_profile_release_checks(report: Report) -> dict[str, set[str]]:
     path = Path(__file__).with_name("release-requirements.json")
     try:
@@ -82,10 +101,18 @@ def load_profile_release_checks(report: Report) -> dict[str, set[str]]:
 
 
 def read(path: Path, report: Report) -> str:
-    if not path.is_file():
+    status = file_status(path)
+    if status == "missing":
         report.error(f"missing file: {path}")
         return ""
-    return path.read_text(encoding="utf-8")
+    if status != "file":
+        report.error(f"unsafe or unreadable file: {path} ({status})")
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        report.error(f"cannot read file: {path}: {exc}")
+        return ""
 
 
 def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Report) -> None:
@@ -121,9 +148,6 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
     required_lifecycle_sections = [
         "## 0.7 Context Loading & Budget",
         "## 0.13 Gate State Machine",
-        "### 0.3.1 Stage Entry / Planning",
-        "### 0.3.2 Project Risk Profile / Workstream",
-        "### 0.3.3 Proportional Change / Incremental Validation",
         "# 31. Agent Runtime Standard",
         "## 32.4 Skill Security Contract",
         "# 35. Multi-Agent Concurrency & Governance",
@@ -186,9 +210,6 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
 
     required_art_sections = [
         "# 24. Multi-Agent Write Governance",
-        "# 25. Evidence / Binary Retention",
-        "# 26. Context Hygiene",
-        "## 17.1 Release Readiness",
     ]
     for s in required_art_sections:
         if s in art:
@@ -196,73 +217,10 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
         else:
             report.error(f"missing artifact section: {s}")
 
-    impact_markers = (
-        "Impact Analysis",
-        "Earliest Stage",
-        "Retained Artifacts",
-        "Minimum Verification",
-        "Full Regression Trigger",
-        "依赖图缺失",
-    )
-    if all(marker in life + "\n" + art + "\n" + boot for marker in impact_markers):
-        report.pass_("proportional Change routing and incremental validation contract present")
-    else:
-        report.error("Change impact and incremental validation contract is incomplete")
-
-    change_template = lifecycle.parent.parent / "templates" / "change-log.md"
-    change_text = read(change_template, report)
-    change_template_markers = (
-        "## Artifact Contract",
-        "## CHANGE-XXX",
-        "Earliest Stage:",
-        "Affected Artifacts:",
-        "Minimum Verification:",
-        "Full Regression Trigger:",
-    )
-    if change_text and all(marker in change_text for marker in change_template_markers):
-        report.pass_("Change Impact template is available")
-    elif change_text:
-        report.error("Change Impact template is incomplete")
-
-    if "不要先完整读取两份 Standard" in boot:
-        report.pass_("bootstrap explicitly forbids eager full-standard loading")
-    else:
-        report.error("bootstrap does not enforce minimal-context loading")
-
     if "Single Writer" in boot and "compare-before-write" in boot:
         report.pass_("bootstrap includes governance concurrency controls")
     else:
         report.error("bootstrap missing concurrency controls")
-    if ".ai/project-profile.json" in boot and ".ai/audit/transitions.jsonl" in boot and ".ai/release-readiness.json" in boot:
-        report.pass_("bootstrap includes risk, transition audit, and release readiness paths")
-    else:
-        report.error("bootstrap is missing risk or release governance paths")
-
-    if "Research Brief" in life and "当前对话" in life and "禁止只写文档后静默完成" in boot:
-        report.pass_("research results require conversational delivery")
-    else:
-        report.error("research results are not required in the current conversation")
-    planning_markers = (
-        "Stage 01、05、06、07、08、09、10、13、14、15、16、20",
-        "Stage 22",
-        "已接受的计划",
-        "原生 Codex Plan 模式",
-        "不阻塞执行",
-    )
-    if all(marker in life + "\n" + boot for marker in planning_markers):
-        report.pass_("high-impact Stage entry has a portable planning policy")
-    else:
-        report.error("Stage entry planning policy is incomplete")
-    stage_brief_markers = ("Stage User Brief", "目标", "输入", "已完成", "未完成", "用户决策", "确认影响", "下一阶段入口提醒", "验证结果")
-    artifact_contract_markers = ("Artifact Contract", "Purpose", "Inputs", "Outputs", "Acceptance Criteria", "Current Status", "Blocking Decisions", "Next Stage")
-    if all(marker in life + "\n" + art + "\n" + boot for marker in stage_brief_markers):
-        report.pass_("each Stage requires a user brief")
-    else:
-        report.error("Stage User Brief contract is incomplete")
-    if all(marker in art for marker in artifact_contract_markers):
-        report.pass_("Stage Artifacts require acceptance contracts")
-    else:
-        report.error("Artifact Contract is incomplete")
 
     if "PENDING USER DECISION" in life or "PENDING USER DECISION" in boot:
         report.error("legacy pseudo GateStatus 'PENDING USER DECISION' remains in executable standard/prompt")
@@ -360,11 +318,20 @@ def validate_project_governance(root: Path, state: dict, report: Report) -> None
     if not profile_release_checks:
         return
     profile_path = root / ".ai" / "project-profile.json"
-    if not profile_path.is_file():
-        report.error("missing project governance profile: .ai/project-profile.json")
+    profile_status = file_status(profile_path)
+    if profile_status == "missing":
+        report.warn("missing optional project governance profile: .ai/project-profile.json")
+        return
+    if profile_status != "file":
+        report.error(f"cannot safely read project governance profile: .ai/project-profile.json ({profile_status})")
         return
     try:
-        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        profile_text = profile_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        report.error(f"cannot read project governance profile: {exc}")
+        return
+    try:
+        profile = json.loads(profile_text)
         if not isinstance(profile, dict):
             raise ValueError("profile must be a JSON object")
         risk = profile.get("risk_profile")
@@ -390,57 +357,85 @@ def validate_project_governance(root: Path, state: dict, report: Report) -> None
             raise ValueError(f"{risk} profile requires at least one workstream")
         report.pass_(f"project governance profile is valid: {risk}")
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
-        report.error(f"invalid project governance profile: {exc}")
+        report.warn(f"invalid optional project governance profile: {exc}")
         return
 
     audit_path = root / ".ai" / "audit" / "transitions.jsonl"
-    if not audit_path.is_file():
-        report.error("missing required transition audit log: .ai/audit/transitions.jsonl")
-    elif audit_path.is_file():
+    audit_status = file_status(audit_path)
+    if audit_status == "missing":
+        report.warn("missing optional transition audit log: .ai/audit/transitions.jsonl")
+    elif audit_status != "file":
+        report.error(f"cannot safely read transition audit log: .ai/audit/transitions.jsonl ({audit_status})")
+    else:
         try:
-            records = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-            if not records:
-                raise ValueError("transition audit log is empty")
-            last = records[-1]
-            if not isinstance(last, dict) or not isinstance(last.get("to_state"), dict):
-                raise ValueError("last transition has no to_state")
-            expected = {key: state.get(key) for key in ("cycle", "stage", "stage_type", "stage_status", "gate_status")}
-            if isinstance(expected["stage"], str) and expected["stage"].isdigit():
-                expected["stage"] = int(expected["stage"])
-            if expected["gate_status"] in {"null", "None", ""}:
-                expected["gate_status"] = None
-            actual = {key: last["to_state"].get(key) for key in expected}
-            if expected != actual:
-                raise ValueError("last transition does not match state.yaml")
-            report.pass_("transition audit log ends at the current state")
-        except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError) as exc:
-            report.error(f"invalid transition audit log: {exc}")
+            audit_text = audit_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            report.error(f"cannot read transition audit log: {exc}")
+        else:
+            try:
+                records = [json.loads(line) for line in audit_text.splitlines() if line.strip()]
+                if not records:
+                    raise ValueError("transition audit log is empty")
+                last = records[-1]
+                if not isinstance(last, dict) or not isinstance(last.get("to_state"), dict):
+                    raise ValueError("last transition has no to_state")
+                expected = {key: state.get(key) for key in ("cycle", "stage", "stage_type", "stage_status", "gate_status")}
+                if isinstance(expected["stage"], str) and expected["stage"].isdigit():
+                    expected["stage"] = int(expected["stage"])
+                if expected["gate_status"] in {"null", "None", ""}:
+                    expected["gate_status"] = None
+                actual = {key: last["to_state"].get(key) for key in expected}
+                if expected != actual:
+                    raise ValueError("last transition does not match state.yaml")
+                report.pass_("transition audit log ends at the current state")
+            except (json.JSONDecodeError, ValueError, TypeError) as exc:
+                report.warn(f"invalid optional transition audit log: {exc}")
 
     stage = state.get("stage")
     gate = state.get("gate_status")
     if isinstance(stage, int) and (stage >= 21 or (stage == 20 and gate == "PASS")):
         readiness_path = root / ".ai" / "release-readiness.json"
-        if not readiness_path.is_file():
-            report.error("missing release readiness at release boundary: .ai/release-readiness.json")
+        readiness_status = file_status(readiness_path)
+        if readiness_status == "missing":
+            report.warn("missing optional release readiness at release boundary: .ai/release-readiness.json")
+        elif readiness_status != "file":
+            report.error(f"cannot safely read release readiness: .ai/release-readiness.json ({readiness_status})")
         else:
             try:
-                readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
-                checks = readiness.get("checks", {}) if isinstance(readiness, dict) else {}
-                missing = sorted(check for check in profile_release_checks[risk] if not isinstance(checks.get(check), dict) or checks[check].get("status") != "PASS")
-                if readiness.get("profile") != risk or readiness.get("status") not in {"READY", "RELEASED"}:
-                    report.error("release readiness profile/status is not ready")
-                elif missing:
-                    report.error(f"release readiness missing PASS checks: {missing}")
-                else:
-                    report.pass_("release readiness satisfies the risk profile")
-            except (OSError, UnicodeError, json.JSONDecodeError, AttributeError) as exc:
-                report.error(f"invalid release readiness: {exc}")
+                readiness_text = readiness_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                report.error(f"cannot read release readiness: {exc}")
+            else:
+                try:
+                    readiness = json.loads(readiness_text)
+                    checks = readiness.get("checks", {}) if isinstance(readiness, dict) else {}
+                    missing = sorted(check for check in profile_release_checks[risk] if not isinstance(checks.get(check), dict) or checks[check].get("status") != "PASS")
+                    if readiness.get("profile") != risk or readiness.get("status") not in {"READY", "RELEASED"}:
+                        report.warn("optional release readiness profile/status is not ready")
+                    elif missing:
+                        report.warn(f"optional release readiness missing PASS checks: {missing}")
+                    else:
+                        report.pass_("release readiness satisfies the risk profile")
+                except (json.JSONDecodeError, AttributeError, TypeError) as exc:
+                    report.warn(f"invalid optional release readiness: {exc}")
 
     cycle = state.get("cycle")
     if cycle:
         stages_root = root / ".ai" / "cycles" / str(cycle) / "stages"
-        if stages_root.is_dir():
+        stages_status = file_status(stages_root)
+        if stages_status == "unsafe":
+            report.error(f"cannot safely read Cycle stages path: {stages_root.relative_to(root)}")
+        elif stages_status == "unreadable":
+            report.error(f"cannot read Cycle stages path: {stages_root.relative_to(root)}")
+        elif stages_status == "file":
+            report.error(f"Cycle stages path is not a directory: {stages_root.relative_to(root)}")
+        elif stages_status == "non-file":
             for snapshot_path in stages_root.rglob("08_PRD_SNAPSHOT.md"):
+                snapshot_status = file_status(snapshot_path)
+                if snapshot_status != "file":
+                    if snapshot_status != "missing":
+                        report.error(f"cannot safely read PRD Snapshot {snapshot_path.relative_to(root)} ({snapshot_status})")
+                    continue
                 try:
                     snapshot_text = snapshot_path.read_text(encoding="utf-8")
                 except (OSError, UnicodeError) as exc:
@@ -452,18 +447,29 @@ def validate_project_governance(root: Path, state: dict, report: Report) -> None
                 revision = re.search(r"(?mi)^\s*-\s*Source State Revision\s*[：:]\s*(\d+)\s*$", snapshot_text)
                 current_revision = state.get("revision")
                 if not revision:
-                    report.error(f"active PRD Snapshot lacks Source State Revision: {snapshot_path.relative_to(root)}")
+                    report.warn(f"active PRD Snapshot lacks Source State Revision: {snapshot_path.relative_to(root)}")
                 elif str(current_revision).isdigit() and int(revision.group(1)) != int(current_revision):
-                    report.error(f"active PRD Snapshot is stale: {snapshot_path.relative_to(root)}")
+                    report.warn(f"active PRD Snapshot is stale: {snapshot_path.relative_to(root)}")
 
 
 def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -> None:
     root = project_root.expanduser().resolve()
-    required_files = [
+    advisory_files = [
         root / "AGENTS.md",
         root / ".ai" / "state.yaml",
         root / ".ai" / "decisions.md",
         root / ".ai" / "registry.yaml",
+    ]
+    for p in advisory_files:
+        status = file_status(p)
+        if status == "file":
+            report.pass_(f"optional project runtime source exists: {p.relative_to(root)}")
+        elif status == "missing":
+            report.warn(f"missing optional project runtime source: {p.relative_to(root)}")
+        else:
+            report.error(f"unsafe or unreadable optional project runtime source: {p.relative_to(root)} ({status})")
+
+    required_files = [
         root / ".ai" / "schemas" / "state.schema.json",
         root / ".ai" / "schemas" / "registry.schema.json",
         root / ".ai" / "schemas" / "decision-request.schema.json",
@@ -476,10 +482,13 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
         root / ".ai" / "templates" / "release-readiness.json",
     ]
     for p in required_files:
-        if p.exists():
+        status = file_status(p)
+        if status == "file":
             report.pass_(f"project runtime source exists: {p.relative_to(root)}")
-        else:
+        elif status == "missing":
             report.error(f"missing project runtime source: {p.relative_to(root)}")
+        else:
+            report.error(f"unsafe or unreadable project runtime source: {p.relative_to(root)} ({status})")
 
     for p in [
         root / ".ai" / "schemas" / "state.schema.json",
@@ -489,7 +498,7 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
         root / ".ai" / "schemas" / "transition-record.schema.json",
         root / ".ai" / "schemas" / "release-readiness.schema.json",
     ]:
-        if not p.is_file():
+        if file_status(p) != "file":
             continue
         try:
             schema = json.loads(p.read_text(encoding="utf-8"))
@@ -501,27 +510,24 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
             report.error(f"cannot parse JSON schema {p.relative_to(root)}: {exc}")
 
     decision_template = root / ".ai" / "templates" / "decision-request.json"
-    if decision_template.is_file():
+    if file_status(decision_template) == "file":
         try:
             sample = json.loads(decision_template.read_text(encoding="utf-8"))
-            required = {"schema_version", "id", "status", "cycle", "stage", "input_type", "question", "why_now", "options", "decision_card"}
+            required = {"schema_version", "id", "status", "cycle", "stage", "input_type", "question"}
             if not required.issubset(sample):
                 report.error(f"decision request template missing keys: {sorted(required - set(sample))}")
             elif sample.get("schema_version") != 2:
                 report.error("decision request template must use schema_version 2")
             elif sample.get("status") != "PENDING":
                 report.error("decision request template must start in PENDING status")
-            elif any(not option.get("tradeoffs") for option in sample.get("options", []) if isinstance(option, dict)):
-                report.error("decision request template options must include tradeoffs")
-            elif not isinstance(sample.get("decision_card"), dict):
-                report.error("decision request template must include decision_card")
             else:
-                report.pass_("decision request template parses and is pending")
+                report.pass_("minimal decision request template parses and is pending")
         except (OSError, json.JSONDecodeError) as exc:
             report.error(f"cannot parse decision request template: {exc}")
 
     state = root / ".ai" / "state.yaml"
-    if state.is_file():
+    state_status = file_status(state)
+    if state_status == "file":
         try:
             if yaml:
                 data = yaml.safe_load(state.read_text(encoding="utf-8")) or {}
@@ -554,12 +560,14 @@ def validate_project(project_root: Path, cwd: Path, host: str, report: Report) -
                 validate_project_governance(root, data, report)
         except Exception as exc:
             report.error(f"cannot parse state.yaml: {exc}")
+    elif state_status != "missing":
+        report.error(f"unsafe or unreadable state.yaml: {state_status}")
 
     if host.lower() == "codex":
         files, total, limit = codex_instruction_chain(root, cwd)
         pct = (total / limit * 100) if limit else 100.0
         if total >= limit:
-            report.error(f"Codex instruction chain {total} bytes reaches/exceeds configured limit {limit}; files may be truncated")
+            report.warn(f"Codex instruction chain {total} bytes reaches/exceeds configured limit {limit}; files may be truncated")
         elif pct >= 75:
             report.warn(f"Codex instruction chain uses {pct:.1f}% of {limit} byte budget")
         else:

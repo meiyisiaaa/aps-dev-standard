@@ -1,9 +1,9 @@
-基于当前已有项目启动一个新的完整 Rebaseline Cycle。
+基于当前已有项目启动一个新的 Rebaseline Cycle。
 
 要求：
-1. 保留现有代码、历史 Cycle、Decision 与有效 Artifact 作为输入证据，不删除、不覆盖历史。
-2. 创建新的 Cycle，从 Stage 01 开始重新审查 Stage 01–23；不要继承旧 Stage 的 PASS 状态。
-3. 每个 Stage 都重新执行：读取现状 → 对照代码与证据 → 找过期假设 / 缺口 / 冲突 → 必要时重新调研 → 形成当前 Cycle Artifact → Validation → Gate / Transition。
-4. 仍成立的旧 Source of Truth 可继续由 Registry 引用，不为追求“当前 Cycle 路径”而无意义复制。
-5. 已确认 Decision 如需改变，必须走 Change Control 并由我确认。
-6. 不要一次性执行整个周期；按 Stage 推进，每个关键 Gate 通过后再继续。
+1. 保留现有代码、历史 Cycle、Decision 与有效 Artifact；不删除、不覆盖历史。
+2. 创建新的 Cycle，从 Stage 01 作为导航起点重新检查实际需要的内容；不要把旧 Stage 状态自动当作当前状态。
+3. 对当前目标、代码和证据做必要的差异检查；只对发现的问题、过期假设或真实影响执行补充验证。
+4. 仍成立的旧 Source of Truth 可继续引用，不为追求当前 Cycle 路径而复制文件。
+5. 已确认 Decision 如需改变，登记新的用户决策；回答只解除对应 blocker，不自动通过 Gate。
+6. Rebaseline 不是一次性执行整个周期的命令；按实际工作推进，保留状态、锁和文件安全边界。

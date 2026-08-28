@@ -116,7 +116,6 @@ def run_python_expect_failure_capture(*args: str, cwd: Path = ROOT) -> str:
     print(result.stdout, end="")
     if result.returncode == 0:
         raise SystemExit("command unexpectedly succeeded")
-    assert_single_next(result.stdout, " ".join(command))
     return result.stdout
 
 
@@ -134,11 +133,6 @@ def run_python_expect_failure(*args: str, cwd: Path = ROOT) -> None:
     print(result.stdout, end="")
     if result.returncode == 0:
         raise SystemExit("command unexpectedly succeeded")
-
-
-def assert_single_next(output: str, label: str) -> None:
-    if output.count("NEXT") != 1:
-        raise SystemExit(f"{label} did not provide exactly one NEXT action")
 
 
 def snapshot_files(root: Path) -> dict[str, bytes]:
@@ -282,13 +276,17 @@ def main() -> int:
         project = temp / "source-project"
         run_python("aps.py", "init", str(project), "--host", "generic", "--no-launch", "--no-git")
         run_python("aps.py", "doctor", str(project), "--host", "generic", "--standard-only")
+        broken_bundle = temp / "broken-bundle"
+        shutil.copytree(ROOT / "src" / "aps_cli" / "bundle", broken_bundle)
+        (broken_bundle / "package" / "standards" / "lifecycle.md").unlink()
+        run_python_expect_failure(str(broken_bundle / "package" / "tools" / "standards-lint.py"))
         bootstrap_prompt = (project / ".ai" / "bootstrap" / "bootstrap-prompt.txt").read_text(encoding="utf-8")
-        required_prompt_markers = ("优点", "缺点", "适用条件", "主要风险", "直接回答原始研究问题", "分析关键证据", "用户需要 PRD 时", "prd-snapshot.md", "Stage User Brief", "不要每轮对话重复", "当前 Stage / Task", "下一阶段入口提醒", "不要求用户额外确认“Stage PASS”", "Impact Analysis", "定向验证", ".ai/templates/change-log.md")
+        required_prompt_markers = ("23 个 Stage/Gate", "普通任务可以继续", "Single Writer", "compare-before-write", "Stage User Brief", "Artifact Contract", "Research", "Decision Request", "Stage 22")
         if any(marker not in bootstrap_prompt for marker in required_prompt_markers):
-            raise SystemExit("bootstrap prompt does not require decision and research analysis")
-        planning_prompt_markers = ("原生 Codex Plan 模式", "已接受的计划", "不阻塞执行", "Stage 01、05、06、07、08、09、10、13、14、15、16、20")
-        if any(marker not in bootstrap_prompt for marker in planning_prompt_markers):
-            raise SystemExit("bootstrap prompt does not enforce portable planning")
+            raise SystemExit("bootstrap prompt does not describe optional governance and hard stops")
+        forbidden_prompt_markers = ("Stage 01、05、06、07、08、09、10、13、14、15、16、20", "必须逐项说明", "所有项目必须维护")
+        if any(marker in bootstrap_prompt for marker in forbidden_prompt_markers):
+            raise SystemExit("bootstrap prompt still contains removed governance gates")
 
         before_repeat = snapshot_files(project)
         if not (project / ".ai" / "templates" / "prd-snapshot.md").is_file():
@@ -319,8 +317,8 @@ def main() -> int:
             encoding="utf-8",
         )
         legacy_resume = run_python_capture("aps.py", "resume", str(legacy), "--host", "codex", "--no-launch")
-        if "尚未完成风险基线" not in legacy_resume or "APS Agent Handoff" not in legacy_resume:
-            raise SystemExit("legacy governed project did not enter safe governance bootstrap")
+        if "WARN" not in legacy_resume or "不自动猜测为 NORMAL" not in legacy_resume or "APS Agent Handoff" not in legacy_resume:
+            raise SystemExit("legacy governed project did not continue with optional governance warnings")
 
         ordinary = temp / "ordinary-project"
         ordinary.mkdir()
@@ -350,9 +348,9 @@ def main() -> int:
         manifest = project / ".ai" / "standard-manifest.json"
         manifest_before = manifest.read_bytes()
         manifest.write_text(manifest.read_text(encoding="utf-8").replace(f'"version": "{CLI_VERSION}"', '"version": "0.0.0"'), encoding="utf-8")
-        mismatch_output = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
-        if "REFUSE" not in mismatch_output or "aps upgrade" not in mismatch_output:
-            raise SystemExit("version mismatch resume did not provide recovery guidance")
+        mismatch_output = run_python_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
+        if "WARN" not in mismatch_output or "APS Agent Handoff" not in mismatch_output or "aps upgrade" not in mismatch_output:
+            raise SystemExit("version mismatch resume did not continue with warning guidance")
         manifest.write_bytes(manifest_before)
 
         manifest.write_text("{\n", encoding="utf-8")
@@ -384,6 +382,8 @@ def main() -> int:
         if snapshot_files(project) != before_repeat:
             raise SystemExit("unconfirmed rebaseline changed the governed project")
         run_python_expect_failure("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
+        if snapshot_files(project) != before_repeat:
+            raise SystemExit("rebaseline without runtime state changed the governed project")
         state = project / ".ai" / "state.yaml"
         state.write_text((project / ".ai" / "templates" / "state.yaml").read_text(encoding="utf-8"), encoding="utf-8")
         profile = project / ".ai" / "project-profile.json"
@@ -446,8 +446,8 @@ def main() -> int:
             raise SystemExit("cancelled interactive rebaseline changed the project")
         run_python("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
         initial_status = run_python_capture("aps.py", "status", str(project))
-        if "Next action:" not in initial_status or "Planning: reuse an accepted plan" not in initial_status:
-            raise SystemExit("status did not provide the high-impact planning hint and next action")
+        if "Next action:" not in initial_status or "Planning:" in initial_status:
+            raise SystemExit("status still exposed a planning gate")
         normal_state = state.read_text(encoding="utf-8")
         state.write_text(
             normal_state.replace("stage_status: ACTIVE", "stage_status: COMPLETE").replace("gate_status: PENDING", "gate_status: PASS"),
@@ -457,8 +457,8 @@ def main() -> int:
         complete_status = run_python_capture("aps.py", "status", str(project))
         complete_handoff = run_python_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
         for output in (complete_status, complete_handoff):
-            if "不需要额外确认当前 Stage PASS" not in output or "下一阶段入口提醒" not in output or "高影响 Stage" not in output:
-                raise SystemExit("completed Stage did not provide direct-transition and next-Stage planning guidance")
+            if "普通 Stage PASS 不需要额外用户确认" not in output or "下一阶段入口提醒" not in output or "高影响 Stage" in output:
+                raise SystemExit("completed Stage did not provide optional transition guidance")
         state.write_text(normal_state, encoding="utf-8")
         write_transition_audit(project)
         codex_resume = run_python_capture_env({"PATH": ""}, "aps.py", "resume", str(project), "--host", "codex")
@@ -504,16 +504,16 @@ def main() -> int:
         state.write_text(normal_state.replace("revision: 1", "revision: 3").replace("stage: 1", "stage: 17").replace("stage_type: GATED", "stage_type: EXECUTION_LOOP").replace("gate_status: PENDING", "gate_status: null"), encoding="utf-8")
         write_transition_audit(project)
         normal_status = run_python_capture("aps.py", "status", str(project))
-        if "Planning: no high-impact entry planning is required." not in normal_status:
-            raise SystemExit("status incorrectly required planning for an execution Stage")
+        if "Planning:" in normal_status:
+            raise SystemExit("status incorrectly exposed planning for an execution Stage")
         normal_readiness = json.loads((project / ".ai" / "templates" / "release-readiness.json").read_text(encoding="utf-8"))
         normal_readiness.update({"profile": "NORMAL", "status": "READY", "target_environment": "staging", "checks": {name: {"status": "PASS", "evidence_refs": [f"TEST-{name.upper()}"]} for name in ("lint", "build", "functional_qa", "rollback")}, "reviewed_at": "2026-08-27T00:00:04+00:00"})
         (project / ".ai" / "release-readiness.json").write_text(json.dumps(normal_readiness, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         state.write_text(normal_state.replace("revision: 1", "revision: 3").replace("stage: 1", "stage: 22").replace("stage_type: GATED", "stage_type: ROUTER").replace("gate_status: PENDING", "gate_status: null").replace("active_change_refs: []", "active_change_refs: [CHANGE-001]"), encoding="utf-8")
         write_transition_audit(project)
         change_status = run_python_capture("aps.py", "status", str(project))
-        if "Planning: reuse an accepted plan" not in change_status or "Active changes: CHANGE-001" not in change_status or "Impact Analysis" not in change_status:
-            raise SystemExit("status did not expose the active Change planning route")
+        if "Planning:" in change_status or "Active changes: CHANGE-001" not in change_status or "Change note:" not in change_status:
+            raise SystemExit("status did not expose the active Change record without a planning gate")
         state.write_text(normal_state, encoding="utf-8")
         profile_bytes = profile.read_bytes()
         audit = project / ".ai" / "audit" / "transitions.jsonl"
@@ -523,18 +523,31 @@ def main() -> int:
         profile_data["risk_profile"] = "LARGE"
         profile_data["workstreams"] = [{"id": "WS-CORE", "name": "核心工作流", "status": "ACTIVE", "owner": "team", "depends_on": []}]
         profile.write_text(json.dumps(profile_data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        missing_audit = run_python_expect_failure_capture("aps.py", "status", str(project))
-        if "Transition" not in missing_audit or "transitions.jsonl" not in missing_audit:
-            raise SystemExit("large profile did not require transition audit")
+        missing_audit = run_python_capture("aps.py", "status", str(project))
+        if "WARN" not in missing_audit or "Transition" not in missing_audit or "transitions.jsonl" not in missing_audit:
+            raise SystemExit("missing transition audit was not downgraded to a warning")
+        profile_optional_bytes = profile.read_bytes()
+        profile.unlink()
+        missing_profile = run_python_capture("aps.py", "status", str(project))
+        if "WARN" not in missing_profile or "风险基线" not in missing_profile or "Runtime state: present" not in missing_profile:
+            raise SystemExit("missing project profile did not downgrade to a warning")
+        profile.write_bytes(profile_optional_bytes)
+        registry_optional_bytes = registry.read_bytes()
+        registry.unlink()
+        missing_registry = run_python_capture("aps.py", "status", str(project))
+        if "WARN" not in missing_registry or "Registry" not in missing_registry or "Runtime state: present" not in missing_registry:
+            raise SystemExit("missing Registry did not downgrade to a warning")
+        registry.write_bytes(registry_optional_bytes)
+        run_python("aps.py", "doctor", str(project), "--host", "generic")
         transition = json.loads((project / ".ai" / "templates" / "transition-record.json").read_text(encoding="utf-8"))
         transition["recorded_at"] = "2026-08-27T00:00:01+00:00"
         audit.parent.mkdir(parents=True, exist_ok=True)
         audit.write_text(json.dumps(transition, ensure_ascii=False) + "\n", encoding="utf-8")
         run_python("aps.py", "status", str(project))
         audit.write_text(json.dumps({**transition, "evidence_refs": []}, ensure_ascii=False) + "\n", encoding="utf-8")
-        missing_evidence = run_python_expect_failure_capture("aps.py", "status", str(project))
-        if "evidence_refs" not in missing_evidence:
-            raise SystemExit("transition without evidence was accepted")
+        missing_evidence = run_python_capture("aps.py", "status", str(project))
+        if "WARN" not in missing_evidence or "evidence_refs" not in missing_evidence:
+            raise SystemExit("transition without evidence did not produce a warning")
         audit.write_text(json.dumps(transition, ensure_ascii=False) + "\n", encoding="utf-8")
         complete_state = {**transition["to_state"], "stage_status": "COMPLETE", "gate_status": "PASS"}
         broken_last = {
@@ -557,18 +570,18 @@ def main() -> int:
             "\n".join(json.dumps(item, ensure_ascii=False) for item in (transition, complete_record, broken_last)) + "\n",
             encoding="utf-8",
         )
-        broken_audit = run_python_expect_failure_capture("aps.py", "status", str(project))
-        if "最后状态" not in broken_audit or "transitions.jsonl" not in broken_audit:
-            raise SystemExit("transition audit mismatch was not rejected")
+        broken_audit = run_python_capture("aps.py", "status", str(project))
+        if "WARN" not in broken_audit or "最后状态" not in broken_audit or "transitions.jsonl" not in broken_audit:
+            raise SystemExit("transition audit mismatch was not downgraded to a warning")
         non_stage_one = {
             **transition,
             "event_id": "TRN-NONSTAGEONE-001",
             "to_state": {**transition["to_state"], "stage": 2},
         }
         audit.write_text(json.dumps(non_stage_one, ensure_ascii=False) + "\n", encoding="utf-8")
-        non_stage_one_output = run_python_expect_failure_capture("aps.py", "status", str(project))
-        if "必须从 Stage 1 开始" not in non_stage_one_output:
-            raise SystemExit("non-Stage-1 first transition was accepted")
+        non_stage_one_output = run_python_capture("aps.py", "status", str(project))
+        if "WARN" not in non_stage_one_output or "必须从 Stage 1 开始" not in non_stage_one_output:
+            raise SystemExit("non-Stage-1 first transition did not produce a warning")
         non_initial = {
             **transition,
             "event_id": "TRN-NONINITIAL-001",
@@ -576,14 +589,14 @@ def main() -> int:
             "to_state": {**complete_state, "stage": 2, "stage_status": "ACTIVE", "gate_status": "PENDING"},
         }
         audit.write_text(json.dumps(non_initial, ensure_ascii=False) + "\n", encoding="utf-8")
-        non_initial_output = run_python_expect_failure_capture("aps.py", "status", str(project))
-        if "第一条记录必须从空状态开始" not in non_initial_output:
-            raise SystemExit("non-initial transition audit chain was accepted")
+        non_initial_output = run_python_capture("aps.py", "status", str(project))
+        if "WARN" not in non_initial_output or "第一条记录必须从空状态开始" not in non_initial_output:
+            raise SystemExit("non-initial transition audit chain did not produce a warning")
         profile.write_bytes(profile_bytes)
         write_transition_audit(project)
         codex_handoff = run_python_capture_env({"PATH": ""}, "aps.py", "init", str(temp / "codex-mode-project"), "--host", "codex", "--no-git")
-        if "Codex CLI was not found" not in codex_handoff or "可审查计划" not in codex_handoff or "will not auto-launch" in codex_handoff:
-            raise SystemExit("Codex init did not provide a normal session path with planning guidance")
+        if "Codex CLI was not found" not in codex_handoff or "可审查计划" in codex_handoff or "will not auto-launch" in codex_handoff:
+            raise SystemExit("Codex init still exposed the removed planning gate")
         cycle_two_complete_wrong_stage = (
             normal_state.replace("revision: 1", "revision: 3")
             .replace("cycle: CYCLE-001", "cycle: CYCLE-002")
@@ -620,7 +633,6 @@ critical_skills: {}
             (bad_registry_status, "bad registry status"),
             (bad_registry_resume, "bad registry resume"),
         ):
-            assert_single_next(output, label)
             if "registry.yaml.sources.broken_source.path" not in output or "templates/registry.yaml" not in output:
                 raise SystemExit(f"{label} did not provide precise Registry repair guidance")
         if "APS Agent Handoff" in bad_registry_resume:
@@ -643,9 +655,9 @@ critical_skills: {}
 """.replace("__CLI_VERSION__", CLI_VERSION),
             encoding="utf-8",
         )
-        duplicate_registry = run_python_expect_failure_capture("aps.py", "status", str(project))
-        if "字段重复" not in duplicate_registry:
-            raise SystemExit("duplicate Registry fields were accepted")
+        duplicate_registry = run_python_capture("aps.py", "status", str(project))
+        if "WARN" not in duplicate_registry or "字段重复" not in duplicate_registry:
+            raise SystemExit("duplicate Registry fields did not produce a warning")
         registry.write_bytes(registry_before)
 
         from aps_cli import cli as cli_module
@@ -659,9 +671,9 @@ critical_skills: {}
         if runtime_error != "simulated reparse point":
             raise SystemExit("runtime_state did not normalize reparse errors")
 
-        wrong_stage_rebaseline = run_python_expect_failure_capture("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
-        if "Stage 23" not in wrong_stage_rebaseline:
-            raise SystemExit("rebaseline accepted a completed non-Stage-23 cycle")
+        wrong_stage_rebaseline = run_python_capture("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
+        if "APS Agent Handoff" not in wrong_stage_rebaseline or "Stage 23" in wrong_stage_rebaseline:
+            raise SystemExit("rebaseline still required a completed Stage 23 cycle")
         state.write_text(normal_state.replace("cycle: CYCLE-001", "cycle: CYCLE-002"), encoding="utf-8")
         write_transition_audit(project)
 
@@ -712,8 +724,8 @@ critical_skills: {}
             encoding="utf-8",
         )
         request_output = run_python_capture("aps.py", "decision", "request", str(decision_path), str(project))
-        if "decision card" not in request_output or "pros/cons" not in request_output:
-            raise SystemExit("decision request did not require a complete decision card")
+        if "decision pending" not in request_output or "确认问题" not in request_output or "Gate 状态仍由 Agent" not in request_output:
+            raise SystemExit("decision request did not register without requiring a full decision card")
         invalid_decision_path = decision_dir / "DEC-INVALID.json"
         invalid_decision = json.loads(decision_path.read_text(encoding="utf-8"))
         invalid_decision["id"] = "DEC-INVALID"
@@ -729,8 +741,8 @@ critical_skills: {}
             raise SystemExit("status did not show the pending decision")
         run_python("aps.py", "decision", "show", "DEC-001", str(project))
         answer_output = run_python_capture("aps.py", "decision", "answer", "DEC-001", "B", str(project), "--reason", "长期控制更适合当前目标")
-        if "Gate PASS" not in answer_output or "NEXT" not in answer_output:
-            raise SystemExit("decision answer did not explain Gate impact and next step")
+        if "只解除对应 blocker" not in answer_output or "Gate 状态" not in answer_output or "NEXT" not in answer_output:
+            raise SystemExit("decision answer did not preserve Gate state and next step")
         run_python("aps.py", "decision", "show", "DEC-001", str(project))
         if json.loads(decision_path.read_text(encoding="utf-8"))["status"] != "RESOLVED":
             raise SystemExit("decision request status was not resolved")
@@ -743,6 +755,44 @@ critical_skills: {}
         repeated_answer = run_python_capture("aps.py", "decision", "answer", "DEC-001", "A", str(project))
         if "already recorded" not in repeated_answer:
             raise SystemExit("repeated decision answer was not idempotent")
+
+        minimal_path = decision_dir / "DEC-004.json"
+        minimal_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "id": "DEC-004",
+                    "status": "PENDING",
+                    "cycle": "CYCLE-002",
+                    "stage": 1,
+                    "input_type": "free_text",
+                    "question": "是否继续当前验证",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        minimal_request = run_python_capture("aps.py", "decision", "request", str(minimal_path), str(project))
+        if "decision pending" not in minimal_request or "DEC-004" not in minimal_request:
+            raise SystemExit("minimal Decision Request was not accepted")
+        minimal_resume = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
+        if "DEC-004" not in minimal_resume or "REFUSE" not in minimal_resume or "APS Agent Handoff" in minimal_resume:
+            raise SystemExit("minimal pending Decision Request did not block resume")
+        run_python("aps.py", "decision", "answer", "DEC-004", "继续", str(project))
+        if json.loads(minimal_path.read_text(encoding="utf-8"))["status"] != "RESOLVED":
+            raise SystemExit("minimal Decision Request was not resolved")
+
+        state_after_minimal = state.read_bytes()
+        for gate in ("HOLD", "STOP"):
+            state.write_text(state_after_minimal.decode("utf-8").replace("gate_status: PENDING", f"gate_status: {gate}"), encoding="utf-8")
+            write_transition_audit(project)
+            paused_resume = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
+            if f"当前 Gate 为 {gate}" not in paused_resume or "APS Agent Handoff" in paused_resume:
+                raise SystemExit(f"{gate} did not block resume")
+        state.write_bytes(state_after_minimal)
+        write_transition_audit(project)
 
         multi_path = decision_dir / "DEC-002.json"
         multi_path.write_text(
@@ -780,17 +830,16 @@ critical_skills: {}
         )
         run_python("aps.py", "decision", "request", str(multi_path), str(project))
         handoff_before = snapshot_files(project)
-        handoff_output = run_python_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
+        handoff_output = run_python_expect_failure_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
         if (
-            "Current APS handoff:" not in handoff_output
-            or "Pending decisions: DEC-002" not in handoff_output
-            or "=== APS Agent Handoff ===" not in handoff_output
-            or "```text" not in handoff_output
-            or "不写入项目文件" not in handoff_output
+            "DEC-002" not in handoff_output
+            or "REFUSE" not in handoff_output
+            or "不会继续启动" not in handoff_output
+            or "=== APS Agent Handoff ===" in handoff_output
         ):
-            raise SystemExit("resume handoff did not include the pending decision")
+            raise SystemExit("pending decision did not block resume")
         if snapshot_files(project) != handoff_before:
-            raise SystemExit("resume handoff changed the project workspace")
+            raise SystemExit("pending decision resume changed the project workspace")
         run_python("aps.py", "decision", "answer", "DEC-002", "A,C", str(project))
         decisions = (project / ".ai" / "decisions.md").read_text(encoding="utf-8")
         if "## DEC-002" not in decisions or "Decision: A, C" not in decisions:
@@ -868,9 +917,9 @@ critical_skills: {}
             raise SystemExit("research brief was not rendered")
         missing_research = research_dir / "MISSING_BRIEF.md"
         missing_research.write_text("# Missing\n\n## Research Brief\n\n研究问题：只填写了范围。\n", encoding="utf-8")
-        missing_output = run_python_expect_failure_capture("aps.py", "research", "brief", str(missing_research), str(project))
-        if "Research Brief is missing" not in missing_output or "研究摘要缺少字段" not in missing_output:
-            raise SystemExit("missing Research Brief fields did not provide repair guidance")
+        missing_output = run_python_capture("aps.py", "research", "brief", str(missing_research), str(project))
+        if "WARN" not in missing_output or "Research Brief 缺少字段" not in missing_output:
+            raise SystemExit("missing Research Brief fields did not downgrade to a warning")
         snapshot_dir = project / ".ai" / "cycles" / "CYCLE-002" / "stages" / "08-requirements"
         snapshot_dir.mkdir(parents=True, exist_ok=True)
         current_revision = int(re.search(r"(?m)^revision:\s*(\d+)", state.read_text(encoding="utf-8")).group(1))
@@ -878,9 +927,9 @@ critical_skills: {}
         snapshot.write_text(f"# PRD Snapshot\n\n- Current Status：ACTIVE\n- Source State Revision：{current_revision}\n", encoding="utf-8")
         run_python("aps.py", "status", str(project))
         snapshot.write_text(snapshot.read_text(encoding="utf-8").replace(f"Source State Revision：{current_revision}", "Source State Revision：1"), encoding="utf-8")
-        stale_snapshot = run_python_expect_failure_capture("aps.py", "status", str(project))
-        if "PRD Snapshot" not in stale_snapshot or "Source State Revision" not in stale_snapshot or "aps status" not in stale_snapshot or "doctor --standard-only" in stale_snapshot:
-            raise SystemExit("stale PRD Snapshot was not rejected")
+        stale_snapshot = run_python_capture("aps.py", "status", str(project))
+        if "WARN" not in stale_snapshot or "PRD Snapshot" not in stale_snapshot or "Source State Revision" not in stale_snapshot or "Runtime state: present" not in stale_snapshot:
+            raise SystemExit("stale PRD Snapshot did not downgrade to a warning")
         snapshot.unlink()
         run_python("aps.py", "doctor", str(project), "--host", "generic")
 
@@ -901,9 +950,9 @@ critical_skills: {}
         release_profile_data["risk_profile"] = "REGULATED"
         release_profile_data["workstreams"] = [{"id": "WS-CORE", "name": "核心工作流", "status": "ACTIVE", "owner": "compliance-team", "depends_on": []}]
         release_profile.write_text(json.dumps(release_profile_data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        missing_readiness = run_python_expect_failure_capture("aps.py", "status", str(release_governance))
-        if "Release readiness" not in missing_readiness or "release-readiness.json" not in missing_readiness:
-            raise SystemExit("release boundary did not require readiness evidence")
+        missing_readiness = run_python_capture("aps.py", "status", str(release_governance))
+        if "WARN" not in missing_readiness or "Release readiness" not in missing_readiness or "release-readiness.json" not in missing_readiness:
+            raise SystemExit("missing release readiness did not downgrade to a warning")
         checks = {name: {"status": "PASS", "evidence_refs": [f"TEST-{name.upper()}"]} for name in ("lint", "typecheck", "unit", "integration", "e2e", "performance", "migration", "security", "privacy_compliance", "traceability", "security_approval", "functional_qa", "monitoring", "rollback", "audit_retention", "disaster_recovery", "on_call", "external_acceptance")}
         readiness = json.loads((release_governance / ".ai" / "templates" / "release-readiness.json").read_text(encoding="utf-8"))
         readiness.update({"release_id": "REL-001", "profile": "REGULATED", "status": "READY", "target_environment": "production", "checks": checks, "workstream_refs": ["WS-CORE"], "reviewed_at": "2026-08-27T00:00:03+00:00", "approved_by": "release-owner"})
@@ -1077,9 +1126,9 @@ critical_skills: {}
             """# Pseudo\n\n## Research Brief\n\n正文提到 Question、Method、Key Findings、Conclusion、Uncertainty 和 Pending Decisions，引用中也出现这些词。\n""",
             encoding="utf-8",
         )
-        pseudo_output = run_python_expect_failure_capture("aps.py", "research", "brief", str(pseudo_research), str(project))
-        if "Research Brief is missing" not in pseudo_output or "研究问题 / 范围" not in pseudo_output:
-            raise SystemExit("Research Brief pseudo-keyword content was accepted")
+        pseudo_output = run_python_capture("aps.py", "research", "brief", str(pseudo_research), str(project))
+        if "WARN" not in pseudo_output or "Research Brief 缺少字段" not in pseudo_output or "正文提到" not in pseudo_output:
+            raise SystemExit("Research Brief pseudo-keyword content did not remain readable with a warning")
 
         cp1252_status = run_python_capture_env({"PYTHONIOENCODING": "cp1252"}, "aps.py", "status", str(project))
         if "Project:" not in cp1252_status or "Managed conflicts: 0" not in cp1252_status:

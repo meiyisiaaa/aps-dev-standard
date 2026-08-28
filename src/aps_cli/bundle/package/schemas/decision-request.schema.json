@@ -11,9 +11,7 @@
     "cycle",
     "stage",
     "input_type",
-    "question",
-    "why_now",
-    "options"
+    "question"
   ],
   "properties": {
     "$schema": {"type": "string"},
@@ -75,16 +73,5 @@
         "confirmation_method": {"type": "string", "minLength": 1}
       }
     }
-  },
-  "allOf": [
-    {
-      "if": {"properties": {"schema_version": {"const": 2}}},
-      "then": {
-        "required": ["decision_card", "recommended"],
-        "properties": {
-          "options": {"items": {"required": ["tradeoffs"]}}
-        }
-      }
-    }
-  ]
+  }
 }

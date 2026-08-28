@@ -430,13 +430,14 @@ def _validate_request(data: Any, *, pending_only: bool = True) -> dict[str, Any]
         raise DecisionError("Decision Request 的 cycle 无效")
     if isinstance(data.get("stage"), bool) or not isinstance(data.get("stage"), int) or not 1 <= data["stage"] <= 23:
         raise DecisionError("Decision Request 的 stage 必须在 1 到 23 之间")
-    for key in ("question", "why_now"):
-        if not isinstance(data.get(key), str) or not data[key].strip():
-            raise DecisionError(f"Decision Request 缺少必需字段：{key}")
+    if not isinstance(data.get("question"), str) or not data["question"].strip():
+        raise DecisionError("Decision Request 缺少必需字段：question")
+    if "why_now" in data and (not isinstance(data["why_now"], str) or not data["why_now"].strip()):
+        raise DecisionError("Decision Request 的 why_now 必须是非空字符串")
     input_type = data.get("input_type")
     if input_type not in INPUT_TYPES:
         raise DecisionError(f"不支持的 decision input_type：{input_type}")
-    options = data.get("options")
+    options = data.setdefault("options", [])
     if not isinstance(options, list):
         raise DecisionError("Decision Request 的 options 必须是数组")
     option_ids: list[str] = []
@@ -464,7 +465,7 @@ def _validate_request(data: Any, *, pending_only: bool = True) -> dict[str, Any]
                 and all(isinstance(item, str) and item.strip() for item in tradeoffs)
             )
             if not valid_tradeoffs:
-                raise DecisionError(f"决策选项 {option_id} 必须包含 tradeoffs（取舍）")
+                raise DecisionError(f"决策选项 {option_id} 的 tradeoffs 必须是非空文本或数组")
     if input_type in {"single_select", "multi_select", "ranking", "approval"} and not option_ids:
         raise DecisionError(f"decision input_type {input_type} 必须包含 options")
     recommended = data.get("recommended")
@@ -472,12 +473,10 @@ def _validate_request(data: Any, *, pending_only: bool = True) -> dict[str, Any]
         raise DecisionError("Decision Request 的 recommended 必须是字符串或 null")
     if recommended is not None and recommended not in option_ids:
         raise DecisionError("Decision Request 的 recommended option 不在 options 中")
-    if schema_version == 2:
-        if "recommended" not in data:
-            raise DecisionError("schema_version=2 的 Decision Request 必须包含 recommended option")
-        card = data.get("decision_card")
+    card = data.get("decision_card")
+    if card is not None:
         if not isinstance(card, dict):
-            raise DecisionError("schema_version=2 的 Decision Request 必须包含 decision_card")
+            raise DecisionError("Decision Request 的 decision_card 必须是对象")
         unknown_card = sorted(set(card) - {"impact", "confirmation_method"})
         if unknown_card:
             raise DecisionError(f"decision_card 包含未知字段：{', '.join(unknown_card)}")
@@ -487,7 +486,7 @@ def _validate_request(data: Any, *, pending_only: bool = True) -> dict[str, Any]
             for key in ("code", "documentation", "time")
         ):
             raise DecisionError("decision_card.impact 必须包含 code、documentation 和 time")
-        if isinstance(impact, dict) and sorted(set(impact) - {"code", "documentation", "time"}):
+        if sorted(set(impact) - {"code", "documentation", "time"}):
             raise DecisionError("decision_card.impact 包含未知字段")
         if not isinstance(card.get("confirmation_method"), str) or not card["confirmation_method"].strip():
             raise DecisionError("decision_card 必须包含 confirmation_method")
@@ -615,7 +614,7 @@ def register_request(project: Path, request_file: Path) -> int:
         refs = [ref for ref in state["pending_decision_refs"] if isinstance(ref, str)]
         if request["id"] in refs:
             print(f"OK    decision already pending（决策已登记）: {request['id']}")
-            print(f"NEXT  在当前对话运行 `aps decision show {request['id']}`，确认 Decision Card 后再回答。")
+            print(f"NEXT  在当前对话运行 `aps decision show {request['id']}`，确认问题后再回答。")
             return 0
         if any(_blocker_ref(item) == request["id"] for item in state["blockers"]):
             raise DecisionError(f"Decision Request 已存在 blocker，但 state 没有 pending 引用：{request['id']}")
@@ -630,10 +629,10 @@ def register_request(project: Path, request_file: Path) -> int:
         _save_state(state_path, state)
     print(f"OK    decision pending（已登记待决策）: {request['id']}")
     print(
-        "NEXT  当前对话下一步：先展示 decision card（说明 why now、每个选项的 pros/cons、代码/文档/时间影响和确认方式），"
+        "NEXT  当前对话下一步：确认问题和可选项，"
         f"再运行 `aps decision answer {request['id']} <ANSWER>`。"
     )
-    print("WARN  用户选择不等于 Gate PASS；仍需完成对应 Artifact、Validation 和当前 Gate 条件。")
+    print("WARN  用户回答只解除对应 decision blocker；Gate 状态仍由 Agent 按需更新。")
     return 0
 
 
@@ -728,7 +727,7 @@ def answer_request(project: Path, ref: str, answer: str, reason: str = "") -> in
                 raise DecisionError(f"Decision Request 已标记为 RESOLVED，但 decisions.md 缺少记录：{ref}")
             _reconcile_terminal_decision(state_path, state, ref)
             print(f"OK    decision already recorded（决策已记录）: {ref}")
-            print("NEXT  用户选择不等于 Gate PASS；运行 `aps status` 确认当前 Artifact、Validation 和 Gate。")
+            print("NEXT  用户回答已记录；按需运行 `aps status` 查看当前 Stage。")
             return 0
         if ref not in pending:
             if _decision_exists(log_path, ref):
@@ -762,8 +761,8 @@ def answer_request(project: Path, ref: str, answer: str, reason: str = "") -> in
                 raise DecisionError(f"决策更新失败且回滚失败：{rollback_exc}") from exc
             raise
     print(f"OK    decision recorded（已记录回答）: {ref} = {display}")
-    print("WARN  用户选择不等于 Gate PASS；决策只解除对应 blocker，不自动通过 Gate。")
-    print("NEXT  完成对应 Artifact 和 Validation 后运行 `aps status`，按当前 Transition Contract 更新 Gate。")
+    print("WARN  决策只解除对应 blocker，不自动修改 Gate 状态。")
+    print("NEXT  按需运行 `aps status` 查看当前 Stage 并继续工作。")
     return 0
 
 

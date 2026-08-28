@@ -16,7 +16,6 @@ from .installer import BEGIN_AGENTS, BEGIN_GITIGNORE, END_AGENTS, END_GITIGNORE,
 from .research import render_brief
 
 HOSTS = ("codex", "generic")
-PLANNING_RECOMMENDED_STAGES = frozenset({1, 5, 6, 7, 8, 9, 10, 13, 14, 15, 16, 20})
 MANAGED_PATH_PREFIX = ".ai/"
 
 
@@ -41,16 +40,6 @@ def configure_stdio() -> None:
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
             reconfigure(encoding="utf-8", errors="replace")
-
-
-def stage_needs_planning_hint(state: dict) -> bool:
-    """Return whether the active Stage benefits from an accepted entry plan."""
-    if state.get("stage_status") == "COMPLETE":
-        return False
-    stage = state.get("stage")
-    if isinstance(stage, int) and stage in PLANNING_RECOMMENDED_STAGES:
-        return True
-    return stage == 22 and bool(state.get("active_change_refs"))
 
 
 def bundle_dir() -> Path:
@@ -314,21 +303,21 @@ def recovery(cause: str, next_action: str) -> None:
 
 
 GOVERNANCE_CAUSES = {
-    "registry": "Registry 缺失或无法严格解析，Agent 不能安全定位当前 Source of Truth。",
-    "project_profile": "项目风险基线缺失或无法严格解析，APS 不会猜测为 NORMAL。",
-    "transition_audit": "Stage / Gate / Cycle 审计链缺失、断裂或未对齐当前状态。",
-    "release_readiness": "Release readiness 缺失或未满足当前风险级别的必需检查。",
-    "prd_snapshot": "当前 PRD Snapshot 的来源 revision 或字段不完整，不能证明它反映当前状态。",
+    "registry": "Registry 是可选的 Source of Truth 索引；缺失或不完整时不自动猜测内容。",
+    "project_profile": "风险基线是可选元数据；缺失时不自动猜测为 NORMAL。",
+    "transition_audit": "Transition 审计是可选历史记录；缺失或不连续时保留提示。",
+    "release_readiness": "Release readiness 是可选发布清单；缺失或未完成时不代表自动批准发布。",
+    "prd_snapshot": "PRD Snapshot 是可选派生视图；过期时不再作为当前状态来源。",
 }
 
 GOVERNANCE_NEXT_ACTIONS = {
-    "registry": "在 Host 中按 `.ai/templates/registry.yaml` 修复 `.ai/registry.yaml`，再运行 `{doctor_command}`。",
-    "project_profile": "在 Host 中按 `.ai/templates/project-profile.json` 创建或修复 `.ai/project-profile.json`，再运行 `{doctor_command}`。",
-    "transition_audit": "在 Host 中人工修复或补齐 `.ai/audit/transitions.jsonl`，使最后一条记录与 `.ai/state.yaml` 一致，再运行 `{doctor_command}`。",
-    "release_readiness": "在 Host 中按 `.ai/templates/release-readiness.json` 补齐 `.ai/release-readiness.json`，再运行 `{doctor_command}`。",
-    "prd_snapshot": "在 Host 中更新当前 Cycle 的 `08_PRD_SNAPSHOT.md`，补齐最新 Source State Revision 和来源引用，再运行 `aps status`。",
+    "registry": "需要 Source of Truth 索引时，再按 `.ai/templates/registry.yaml` 补齐 `.ai/registry.yaml`。",
+    "project_profile": "需要风险分级时，再按 `.ai/templates/project-profile.json` 填写 `.ai/project-profile.json`。",
+    "transition_audit": "需要审计追踪时，再补充 `.ai/audit/transitions.jsonl`；不会阻塞当前任务。",
+    "release_readiness": "需要发布检查时，再按 `.ai/templates/release-readiness.json` 补充清单。",
+    "prd_snapshot": "需要产品单页视图时，再更新当前 Cycle 的 `08_PRD_SNAPSHOT.md`。",
 }
-DEFAULT_GOVERNANCE_NEXT_ACTION = "运行 `{doctor_command}`，按第一项治理问题人工修复后再运行 `aps status`。"
+DEFAULT_GOVERNANCE_NEXT_ACTION = "按需修复上方提示；它不会阻塞当前 Stage。"
 
 
 def governance_diagnostic(
@@ -336,9 +325,10 @@ def governance_diagnostic(
     *,
     action: str | None = None,
     standard_only: bool = False,
-    marker: str = "FAIL",
+    marker: str | None = None,
 ) -> Diagnostic:
-    cause = GOVERNANCE_CAUSES.get(problem.code, "项目治理校验未通过，APS 不会猜测或绕过当前状态。")
+    is_error = problem.severity == "error"
+    cause = GOVERNANCE_CAUSES.get(problem.code, "这是治理提示；APS 不会猜测或覆盖项目内容。")
     doctor_command = "aps doctor --standard-only" if standard_only else "aps doctor"
     next_action = action or GOVERNANCE_NEXT_ACTIONS.get(problem.code, DEFAULT_GOVERNANCE_NEXT_ACTION).format(doctor_command=doctor_command)
     detail = problem.message
@@ -346,10 +336,11 @@ def governance_diagnostic(
         detail = f"{detail}（路径：{problem.path}）"
     return Diagnostic(
         code=problem.code,
-        marker=marker,
-        problem=f"项目治理校验失败：{detail}",
+        marker=marker or ("FAIL" if is_error else "WARN"),
+        problem=f"项目治理{'校验失败' if is_error else '提示'}：{detail}",
         cause=cause,
         next_action=next_action,
+        exit_code=2 if is_error else 0,
     )
 
 
@@ -364,9 +355,23 @@ def print_governance_failure(
     *,
     action: str | None = None,
     standard_only: bool = False,
-    marker: str = "FAIL",
+    marker: str | None = None,
 ) -> None:
     emit_diagnostic(governance_diagnostic(problem, action=action, standard_only=standard_only, marker=marker))
+
+
+def print_governance_report(
+    problems: list[GovernanceProblem],
+    *,
+    action: str | None = None,
+    standard_only: bool = False,
+) -> bool:
+    """Print all governance issues and return whether any safety issue blocks work."""
+    blocked = False
+    for problem in problems:
+        print_governance_failure(problem, action=action, standard_only=standard_only)
+        blocked = blocked or problem.severity == "error"
+    return blocked
 
 
 def command_hint(argv: list[str]) -> str:
@@ -406,10 +411,6 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
                 lines.append(f"Risk profile: invalid（{profile_error}）")
             else:
                 lines.append("Risk profile: not initialized（风险基线尚未初始化）")
-    if stage_needs_planning_hint(state):
-        lines.append("Planning: reuse an accepted plan or make a concise plan before material changes; native Plan mode is optional.")
-    else:
-        lines.append("Planning: no high-impact entry planning is required.")
     gate = state.get("gate_status")
     if gate not in (None, "null"):
         lines.append(f"Gate: {gate}")
@@ -422,7 +423,7 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
     active_changes = [ref for ref in state.get("active_change_refs", []) if isinstance(ref, str)]
     if active_changes:
         lines.append(f"Active changes: {', '.join(active_changes)}")
-        lines.append("Change action: 读取当前 Cycle 的 `22_CHANGE_LOG.md`，先完成 Impact Analysis，再只重跑受影响 Stage 和验证。")
+        lines.append("Change note: Active Change 仅作记录；可按需补充变更说明和验证。")
     blockers = state.get("blockers", [])
     for blocker in blockers:
         if isinstance(blocker, dict):
@@ -433,54 +434,57 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
             lines.append(f"Blocker: {kind}{(' ' + suffix) if suffix else ''}")
         elif blocker:
             lines.append(f"Blocker: {blocker}")
-    stage_ready = (
-        not pending
-        and not blockers
-        and (state.get("stage_status") == "COMPLETE" or gate == "PASS")
+    explicit_pause = gate in {"HOLD", "STOP"}
+    stage_ready = not pending and not explicit_pause and (
+        state.get("stage_status") == "COMPLETE" or gate == "PASS"
     )
     next_action = state.get("next_action")
     if next_action in (None, "", "null"):
         if pending:
             next_action = (
-                f"在当前对话完成 {', '.join(pending)} 的决策卡分析并回答，"
+                f"在当前对话回答 {', '.join(pending)}，"
                 f"然后运行 `aps decision answer {pending[0]} <ANSWER>`。"
             )
-        elif active_changes:
-            next_action = "读取 `.ai/templates/change-log.md` 完成 Impact Analysis；确认最早受影响 Stage 后再执行变更。"
-        elif blockers:
-            next_action = "解决以上 blocker，并重新运行 `aps status`。"
-        elif stage_ready:
-            next_action = "读取 Transition Contract，直接进入其指定的下一 Stage；不需要额外确认当前 Stage PASS。"
-        elif gate == "REVISE":
-            next_action = "按 Failure Route 修复当前 Stage，并重新验证。"
         elif gate == "HOLD":
-            next_action = "确认等待条件或恢复当前 Stage。"
+            next_action = "当前 Stage 处于 HOLD；等待明确恢复或变更决定。"
         elif gate == "STOP":
-            next_action = "当前 Cycle 已停止，不执行后续 Stage。"
+            next_action = "当前 Cycle 处于 STOP；等待明确恢复或创建新 Cycle。"
+        elif stage_ready:
+            next_action = "按需读取 Transition Contract，进入指定的下一 Stage。"
+        elif gate == "REVISE":
+            next_action = "继续当前 Stage，按需修订并验证。"
+        elif blockers:
+            next_action = "继续当前 Stage；记录的 blocker 仅作提示。"
         elif state.get("stage_type") == "GATED":
-            next_action = "完成当前 Stage 的 Artifact、验收条件和验证，再更新 Gate。"
+            next_action = "继续当前 Stage；完成后按需更新 Gate。"
         else:
-            next_action = "读取当前 Stage Contract 和 Artifact，继续 Required Actions。"
+            next_action = "继续当前 Stage。"
     if isinstance(next_action, str):
         rendered = next_action
     else:
         rendered = json.dumps(next_action, ensure_ascii=False)
     lines.append(f"Next action: {rendered}")
     if stage_ready:
-        lines.append(
-            "下一阶段入口提醒：读取 Transition Contract；目标为高影响 Stage 时，复用已接受计划或先写简短计划"
-            "（原生 Plan 模式可选）。普通 Stage PASS 不需要额外用户确认。"
-        )
+        lines.append("下一阶段入口提醒：按需读取 Transition Contract；普通 Stage PASS 不需要额外用户确认。")
     return lines
+
+
+def explicit_runtime_pause(state: dict) -> str | None:
+    pending = [ref for ref in state.get("pending_decision_refs", []) if isinstance(ref, str)]
+    if pending:
+        return f"待处理用户决策：{', '.join(pending)}"
+    gate = state.get("gate_status")
+    if gate in {"HOLD", "STOP"}:
+        return f"当前 Gate 为 {gate}"
+    return None
 
 
 def handoff_prompt(mode: str, root: Path | None = None) -> str:
     if mode == "init":
         prompt = (
             "请读取 `.ai/bootstrap/bootstrap-prompt.txt` 并执行。"
-            "这是一个新项目：初始化运行治理状态并从 Stage 01 开始；"
-            "开始实质性工作前先复用已有或形成可审查计划（原生 Plan 模式可选）；普通 Stage 满足 Artifact 和 Validation 后直接推进，"
-            "仅在需要用户决策的 Gate 或 Release 边界停止。"
+            "这是一个新项目：初始化运行治理状态并从 Stage 01 开始。"
+            "将 Stage/Gate 作为导航和记录；普通工作可继续，只有待处理用户决策或明确 HOLD/STOP 时暂停。"
         )
     elif mode == "resume":
         prompt = (
@@ -491,7 +495,7 @@ def handoff_prompt(mode: str, root: Path | None = None) -> str:
         prompt = (
             "请先读取并执行 `.ai/bootstrap/bootstrap-prompt.txt`，"
             "再读取并执行 `.ai/bootstrap/rebaseline-existing-project.txt`。"
-            "创建新的 Rebaseline Cycle，并在 Stage 01 开始前形成可审查计划（原生 Plan 模式可选）；不要在一次对话中跑完整生命周期。"
+            "创建新的 Rebaseline Cycle；保留历史 Cycle、Decision 和 Artifact，不要覆盖已有内容。"
         )
     else:
         raise ValueError(mode)
@@ -549,14 +553,11 @@ def run_doctor(root: Path, host: str, strict_runtime: bool = True) -> int:
             recovery("无法确认当前 Standard 文件集合和托管边界。", "先运行 `aps upgrade` 修复半安装或损坏的 Standard。")
             return 2
         if manifest.get("version") != STANDARD_VERSION:
-            print(f"FAIL  Standard 版本不匹配：{manifest.get('version')} -> {STANDARD_VERSION}")
-            recovery("当前项目使用旧版 Standard，doctor 不会隐式覆盖它。", "运行 `aps upgrade`，再重新运行 `aps doctor`。")
-            return 2
+            print(f"WARN  Standard 版本较旧：当前 {manifest.get('version')}，内置 {STANDARD_VERSION}；不会自动覆盖。")
+            print("NEXT  需要更新时运行 `aps upgrade`；它不会自动覆盖本地 Standard 修改。")
         marker_missing = missing_aps_markers(root)
         if marker_missing:
-            print(f"FAIL  APS 路由标记不完整：{marker_missing[0]}")
-            recovery("项目入口标记缺失，Agent Host 可能无法读取治理规则。", "运行 `aps upgrade` 修复标记后重试 `aps doctor`。")
-            return 2
+            print(f"WARN  APS 路由标记不完整：{', '.join(marker_missing)}；可按需运行 `aps upgrade` 修复。")
         missing = missing_managed_files(root, manifest)
         if missing:
             print(f"FAIL  Standard 托管文件缺失：{missing[0]}")
@@ -589,10 +590,8 @@ def run_doctor(root: Path, host: str, strict_runtime: bool = True) -> int:
         return 2
     state_path = root / ".ai" / "state.yaml"
     state_present = state_path.exists() or state_path.is_symlink()
-    if not state_present and strict_runtime:
-        print("FAIL  Runtime state 尚未初始化。")
-        recovery("Bootstrap 尚未写入 `.ai/state.yaml`，无法检查 active Stage。", "运行 `aps resume`，完成 Bootstrap 后再运行 `aps doctor`。")
-        return 2
+    if not state_present:
+        print("WARN  Runtime state 尚未初始化；Standard 检查仍可继续。")
     if state_present and not state_path.is_file():
         print("FAIL  Runtime state 路径无效：`.ai/state.yaml` 必须是普通文件。")
         recovery("状态路径是目录、链接或其他非普通文件，APS 不会猜测其内容。", "运行 `aps doctor --standard-only`，修复 `.ai/state.yaml` 后再运行 `aps resume --no-launch`。")
@@ -608,9 +607,8 @@ def run_doctor(root: Path, host: str, strict_runtime: bool = True) -> int:
                 next_action = "在 Host 中按第一项状态问题人工修复 `.ai/state.yaml`，再运行 `aps resume --no-launch`。"
             recovery("状态损坏时 APS 不会猜测普通模式，也不会启动普通会话。", next_action)
             return 2
-        profile, governance_problems = runtime_governance_problems(root, state)
-        if governance_problems:
-            print_governance_failure(governance_problems[0], standard_only=not strict_runtime)
+        _, governance_problems = runtime_governance_problems(root, state)
+        if print_governance_report(governance_problems, standard_only=not strict_runtime):
             return 2
     else:
         registry_path = root / ".ai" / "registry.yaml"
@@ -622,20 +620,20 @@ def run_doctor(root: Path, host: str, strict_runtime: bool = True) -> int:
         if registry_required:
             registry_issues = registry_problems(root)
             if registry_issues:
-                print_governance_failure(
-                    governance_problem("registry", registry_issues[0], ".ai/registry.yaml"),
+                if print_governance_report(
+                    [governance_problem("registry", issue, ".ai/registry.yaml") for issue in registry_issues],
                     standard_only=not strict_runtime,
-                )
-                return 2
+                ):
+                    return 2
         if (root / ".ai" / "project-profile.json").exists() or (root / ".ai" / "project-profile.json").is_symlink():
             # A profile is optional before Bootstrap, but an explicitly created one must still be valid.
             _, profile_error = load_project_profile(root)
             if profile_error:
-                print_governance_failure(
-                    governance_problem("project_profile", profile_error, ".ai/project-profile.json"),
-                    action="在 Host 中按 `.ai/templates/project-profile.json` 修复 `.ai/project-profile.json`，再运行 `aps doctor --standard-only`。",
-                )
-                return 2
+                if print_governance_report(
+                    [governance_problem("project_profile", profile_error, ".ai/project-profile.json")],
+                    action="需要风险分级时，再按 `.ai/templates/project-profile.json` 补齐 `.ai/project-profile.json`。",
+                ):
+                    return 2
     cmd = [sys.executable, str(lint)]
     if strict_runtime:
         cmd += ["--project-root", str(root), "--host", host]
@@ -709,16 +707,11 @@ def cmd_resume(args: argparse.Namespace) -> int:
             recovery("无法确认已安装 Standard 文件的完整性。", "先人工检查项目状态；确认可修复后运行 `aps upgrade`，不要用 `init` 覆盖项目。")
             return 2
         if manifest.get("version") != STANDARD_VERSION:
-            print(f"REFUSE  已安装 Standard 为 {manifest.get('version', 'unknown')}，当前 CLI 内置版本为 {STANDARD_VERSION}。")
-            recovery("resume 不会隐式升级或覆盖项目中的 Standard 文件。", "审查变更后运行 `aps upgrade`，再运行 `aps resume --no-launch`。")
-            return 2
+            print(f"WARN  已安装 Standard 为 {manifest.get('version', 'unknown')}，当前 CLI 内置版本为 {STANDARD_VERSION}；resume 不会隐式升级。")
+            print("NEXT  需要更新时运行 `aps upgrade`；它不会自动覆盖本地 Standard 修改。")
         marker_missing = missing_aps_markers(root)
         if marker_missing:
-            print("REFUSE  APS 路由标记不完整：")
-            for item in marker_missing:
-                print(f"  - {item}")
-            recovery("AGENTS.md 或 .gitignore 的 APS 管理块缺失或不完整。", "审查项目文件后运行 `aps upgrade`，再重新运行 `aps resume`。")
-            return 2
+            print(f"WARN  APS 路由标记不完整：{', '.join(marker_missing)}；可按需运行 `aps upgrade` 修复。")
         missing = missing_managed_files(root, manifest)
         if missing:
             print("REFUSE  已安装 Standard 文件缺失或无效：")
@@ -744,37 +737,23 @@ def cmd_resume(args: argparse.Namespace) -> int:
             print(f"REFUSE  Runtime state 无法严格解析：{state_error}")
             recovery("状态损坏时 APS 不会猜测普通模式，也不会启动普通会话。", "运行 `aps doctor --standard-only`，修复第一项状态问题后再运行 `aps resume --no-launch`。")
             return 2
-        registry_path = root / ".ai" / "registry.yaml"
-        registry_required = registry_path.exists() or registry_path.is_symlink()
-        registry_required = registry_required or any(
-            (root / relative).exists() or (root / relative).is_symlink()
-            for relative in (".ai/project-profile.json", ".ai/audit/transitions.jsonl")
-        )
-        if registry_required:
-            registry_issues = registry_problems(root)
-            if registry_issues:
-                print_governance_failure(
-                    governance_problem("registry", registry_issues[0], ".ai/registry.yaml"),
-                    standard_only=True,
-                    marker="REFUSE",
-                )
-                return 2
         if state is not None:
-            profile_path = root / ".ai" / "project-profile.json"
-            audit_path = root / ".ai" / "audit" / "transitions.jsonl"
-            if not (profile_path.exists() or profile_path.is_symlink()) and not (audit_path.exists() or audit_path.is_symlink()):
-                print("WARN  当前项目尚未完成风险基线和 Transition Bootstrap。")
-                print("NEXT  先在 Agent Host 完成 Bootstrap。")
-                return launch_host(
-                    root,
-                    args.host,
-                    handoff_prompt("resume", root),
-                    args.no_launch,
-                )
             _, governance_problems = runtime_governance_problems(root, state)
-            if governance_problems:
-                print_governance_failure(governance_problems[0], standard_only=True, marker="REFUSE")
+            if print_governance_report(governance_problems, standard_only=True):
                 return 2
+            if pause := explicit_runtime_pause(state):
+                print(f"REFUSE  {pause}，resume 不会继续启动当前 Stage。")
+                recovery("只有明确恢复用户决策或 Gate 状态后才能继续当前 Stage。", "运行 `aps status` 查看状态，完成决策或恢复后再运行 `aps resume`。")
+                return 2
+        else:
+            registry_path = root / ".ai" / "registry.yaml"
+            if registry_path.exists() or registry_path.is_symlink():
+                registry_issues = registry_problems(root)
+                if registry_issues and print_governance_report(
+                    [governance_problem("registry", issue, ".ai/registry.yaml") for issue in registry_issues],
+                    standard_only=True,
+                ):
+                    return 2
         return launch_host(
             root,
             args.host,
@@ -821,9 +800,7 @@ def cmd_rebaseline(args: argparse.Namespace) -> int:
         return 2
     marker_missing = missing_aps_markers(root)
     if marker_missing:
-        print("REFUSE  APS 路由标记不完整。")
-        recovery("AGENTS.md 或 .gitignore 的 APS 管理块不完整。", "先运行 `aps upgrade`，再重新确认 `aps rebaseline --confirm`。")
-        return 2
+        print(f"WARN  APS 路由标记不完整：{', '.join(marker_missing)}；可按需运行 `aps upgrade` 修复。")
     runtime, state_error = runtime_state(root)
     if state_error:
         print(f"REFUSE  Runtime state 无法严格解析：{state_error}")
@@ -834,30 +811,11 @@ def cmd_rebaseline(args: argparse.Namespace) -> int:
         recovery("当前项目尚未完成 Bootstrap，无法判断应从哪个 Cycle 重建。", "先在 Agent Host 完成 Bootstrap，再运行 `aps rebaseline --confirm`。")
         return 2
     _, governance_problems = runtime_governance_problems(root, runtime)
-    if governance_problems:
-        print_governance_failure(governance_problems[0], standard_only=True, marker="REFUSE")
+    if print_governance_report(governance_problems, standard_only=True):
         return 2
-    if runtime["cycle"] != "CYCLE-001" and runtime["stage_status"] != "COMPLETE":
-        print(f"REFUSE  当前 Cycle {runtime['cycle']} 尚未完成，不能再创建 Cycle。")
-        recovery("非首个 Cycle 必须先完成当前生命周期。", "运行 `aps resume --no-launch` 恢复当前 Cycle，不要再次执行 rebaseline。")
-        return 2
-    if runtime["cycle"] != "CYCLE-001":
-        if runtime["stage"] != 23 or runtime["stage_status"] != "COMPLETE":
-            print(f"REFUSE  当前 Cycle {runtime['cycle']} 尚未完成 Stage 23 Cycle Review。")
-            recovery("只有完成 Cycle Review 后才能建立新的 Rebaseline Cycle。", "运行 `aps resume --no-launch` 完成 Stage 23，再重新运行 `aps rebaseline --confirm`。")
-            return 2
-        if runtime["stage_type"] == "GATED" and runtime["gate_status"] != "PASS":
-            print(f"REFUSE  当前 Cycle {runtime['cycle']} 的 Stage 23 Gate 尚未 PASS。")
-            recovery("GATED Stage 23 必须先通过 Gate，不能用 rebaseline 绕过。", "运行 `aps resume --no-launch` 修复 Stage 23，再重新运行 `aps rebaseline --confirm`。")
-            return 2
-        if runtime["blockers"] or runtime["pending_decision_refs"]:
-            print(f"REFUSE  当前 Cycle {runtime['cycle']} 仍有 blocker 或待决策。")
-            recovery("Cycle Review 关闭前必须清除所有 blocker 和待决策。", "运行 `aps resume --no-launch` 处理阻塞项，再重新运行 `aps rebaseline --confirm`。")
-            return 2
     if manifest.get("version") != STANDARD_VERSION:
-        print(f"REFUSE  已安装 Standard 为 {manifest.get('version', 'unknown')}，需要先升级到 {STANDARD_VERSION}。")
-        recovery("rebaseline 必须建立在当前 Standard 文件集合上。", "运行 `aps upgrade`，确认无冲突后再运行 `aps rebaseline --confirm`。")
-        return 2
+        print(f"WARN  已安装 Standard 为 {manifest.get('version', 'unknown')}，当前 CLI 内置版本为 {STANDARD_VERSION}；不会自动升级。")
+        print("NEXT  需要更新时运行 `aps upgrade`；它不会自动覆盖本地 Standard 修改。")
     missing = missing_managed_files(root, manifest)
     if missing:
         print("REFUSE  已安装 Standard 文件缺失或无效。")
@@ -974,14 +932,11 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     print(f"Standard: {manifest['version']}")
     if manifest["version"] != STANDARD_VERSION:
-        print(f"FAIL  Standard 版本不匹配：当前 {manifest['version']}，内置 {STANDARD_VERSION}。")
-        recovery("resume 不会隐式升级或覆盖项目中的 Standard 文件。", "运行 `aps upgrade`，确认无冲突后再运行 `aps status`。")
-        return 2
+        print(f"WARN  Standard 版本较旧：当前 {manifest['version']}，内置 {STANDARD_VERSION}；不会自动升级。")
+        print("NEXT  需要更新时运行 `aps upgrade`；它不会自动覆盖本地 Standard 修改。")
     marker_missing = missing_aps_markers(root)
     if marker_missing:
-        print(f"FAIL  APS 路由标记不完整：{marker_missing[0]}")
-        recovery("AGENTS.md 或 .gitignore 的 APS 管理块缺失或不完整。", "运行 `aps upgrade` 修复路由标记后重试 `aps status`。")
-        return 2
+        print(f"WARN  APS 路由标记不完整：{', '.join(marker_missing)}；可按需运行 `aps upgrade` 修复。")
     missing = missing_managed_files(root, manifest)
     if missing:
         print(f"FAIL  Standard 托管文件缺失或无效：{missing[0]}")
@@ -1002,31 +957,25 @@ def cmd_status(args: argparse.Namespace) -> int:
         return 2
 
     state_exists = state.exists() or state.is_symlink()
-    registry_path = root / ".ai" / "registry.yaml"
-    registry_required = registry_path.exists() or registry_path.is_symlink()
-    registry_required = registry_required or any(
-        (root / relative).exists() or (root / relative).is_symlink()
-        for relative in (".ai/project-profile.json", ".ai/audit/transitions.jsonl")
-    )
-    if registry_required:
-        registry_issues = registry_problems(root)
-        if registry_issues:
-            print_governance_failure(
-                governance_problem("registry", registry_issues[0], ".ai/registry.yaml"),
-            )
-            return 2
     if not state_exists:
         print("Runtime state: not initialized")
+        registry_path = root / ".ai" / "registry.yaml"
+        if registry_path.exists() or registry_path.is_symlink():
+            registry_issues = registry_problems(root)
+            if registry_issues and print_governance_report(
+                [governance_problem("registry", issue, ".ai/registry.yaml") for issue in registry_issues],
+            ):
+                return 2
         profile, profile_error = load_project_profile(root)
         if profile is not None:
             print(f"Risk profile: {profile['risk_profile']}")
             print(f"Workstreams: {len(profile['workstreams'])}")
         elif profile_error and ((root / ".ai" / "project-profile.json").exists() or (root / ".ai" / "project-profile.json").is_symlink()):
-            print_governance_failure(
-                governance_problem("project_profile", profile_error, ".ai/project-profile.json"),
-                action="在 Host 中按 `.ai/templates/project-profile.json` 修复 `.ai/project-profile.json`，再运行 `aps doctor --standard-only`。",
-            )
-            return 2
+            if print_governance_report(
+                [governance_problem("project_profile", profile_error, ".ai/project-profile.json")],
+                action="需要风险分级时，再按 `.ai/templates/project-profile.json` 补齐 `.ai/project-profile.json`。",
+            ):
+                return 2
         print("NEXT  运行 `aps resume`，让 Agent Host 完成 Bootstrap。")
         return 0
     runtime, state_error = runtime_state(root)
@@ -1039,8 +988,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     assert runtime is not None
     risk_profile, governance_problems = profile_status(root, runtime)
     print(f"Risk profile: {risk_profile}")
-    if governance_problems:
-        print_governance_failure(governance_problems[0])
+    if print_governance_report(governance_problems):
         return 2
     profile, _ = load_project_profile(root)
     if profile is not None:
@@ -1135,11 +1083,11 @@ def build_parser() -> argparse.ArgumentParser:
             "  新项目：aps init → 完成 Bootstrap → aps doctor\n"
             "  旧项目：aps resume → 完成 Bootstrap → aps status\n"
             "  只想复制 handoff：在 init / resume 后加 --no-launch\n"
-            "  遇到阻塞：aps status → 按 NEXT 操作；需要恢复时运行 aps resume\n"
+            "  遇到问题：aps status → 查看提示；需要恢复时运行 aps resume\n"
             "  决策：aps decision request <REQUEST-FILE> → 当前对话分析 → aps decision answer DEC-001 A\n"
             "  研究：aps research brief <ARTIFACT>；完整报告仍保留在 Stage Artifact。\n"
-            "  风险：Bootstrap 确认 NORMAL/LARGE/REGULATED 并写入 .ai/project-profile.json。\n"
-            "  Release：Stage 20 边界补齐 .ai/release-readiness.json；Release approval 仍需用户确认，普通 Stage PASS 不需要额外确认。"
+            "  风险：NORMAL/LARGE/REGULATED 是可选项目元数据，缺失时不自动猜测。\n"
+            "  Release：按需使用 .ai/release-readiness.json；Release approval 仍需用户确认，普通 Stage PASS 不需要额外确认。"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -1163,7 +1111,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-launch", action="store_true", help="只打印 handoff，不启动 Codex")
     s.set_defaults(func=cmd_resume)
 
-    s = sub.add_parser("rebaseline", help="从 Stage 01 开始新的完整审查 Cycle")
+    s = sub.add_parser("rebaseline", help="从 Stage 01 开始新的审查 Cycle")
     common(s)
     s.add_argument("--confirm", action="store_true", help="确认创建新的 Cycle")
     s.add_argument("--no-launch", action="store_true", help="只打印 handoff，不启动 Codex")
@@ -1179,7 +1127,7 @@ def build_parser() -> argparse.ArgumentParser:
     common(s)
     s.set_defaults(func=cmd_upgrade)
 
-    s = sub.add_parser("status", help="查看项目治理、运行状态和唯一下一步")
+    s = sub.add_parser("status", help="查看项目治理、运行状态和下一步提示")
     s.add_argument("project", nargs="?", default=".", type=Path, help="项目目录，默认当前目录")
     s.set_defaults(func=cmd_status)
 
@@ -1248,7 +1196,7 @@ def main(argv: list[str] | None = None) -> int:
             if command == "decision":
                 cause = "Decision Request 或项目运行状态未通过校验。"
             elif command == "research":
-                cause = "Research Artifact 路径、Research Brief 标识或必需字段未通过校验。"
+                cause = "Research Artifact 路径或读取安全边界未通过校验。"
             elif command == "init":
                 cause = "安装或初始化过程中出现未满足的本地环境条件。"
             else:

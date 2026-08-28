@@ -57,15 +57,15 @@ def _artifact_path(root: Path, artifact: Path) -> Path:
     return candidate
 
 
-def _brief_section(text: str) -> str:
+def _brief_section(text: str) -> tuple[str, list[str]]:
     heading = re.search(r"(?mi)^##(?!#)\s+Research Brief\s*$", text)
     if not heading:
-        raise ResearchError("Research Artifact 必须包含稳定标识 `## Research Brief` 小节")
+        return text.strip(), ["缺少 `## Research Brief` 小节；将展示整个 Artifact"]
     rest = text[heading.end() :]
     next_heading = re.search(r"(?mi)^##(?!#)\s+", rest)
     section = rest[: next_heading.start() if next_heading else None].strip()
     if not section:
-        raise ResearchError("Research Brief 小节为空；请补充研究摘要")
+        return "", ["Research Brief 小节为空"]
     missing: list[str] = []
     for label, pattern in REQUIRED_FIELDS:
         matches = re.findall(
@@ -77,16 +77,8 @@ def _brief_section(text: str) -> str:
         if not matches or not matches[0].strip():
             missing.append(label)
     if missing:
-        fields = "、".join(missing)
-        template = "\n".join(f"{label}：<请填写非空内容>" for label, _ in REQUIRED_FIELDS)
-        raise ResearchError(
-            f"Research Brief is missing: {fields}（研究摘要缺少字段；字段必须以标签开头并包含非空内容，请补齐后重试）\n"
-            "请复制并填写以下修复模板：\n"
-            "```markdown\n"
-            f"{template}\n"
-            "```"
-        )
-    return section
+        return section, [f"Research Brief 缺少字段：{'、'.join(missing)}"]
+    return section, []
 
 
 def render_brief(project: Path, artifact: Path) -> int:
@@ -96,8 +88,10 @@ def render_brief(project: Path, artifact: Path) -> int:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise ResearchError(f"无法读取 Research Artifact {path}：{exc}") from exc
-    section = _brief_section(text)
+    section, warnings = _brief_section(text)
     print(f"Research Brief: {path.relative_to(root).as_posix()}（研究摘要）\n")
-    print(section)
-    print("\nNEXT  以上是当前对话可展示的摘要；完整研究报告仍保留在 Stage Artifact。")
+    for warning in warnings:
+        print(f"WARN  {warning}")
+    print(section or "（Artifact 暂无可展示内容）")
+    print("\nNEXT  以上是当前 Artifact 的可用摘要；完整研究报告仍保留在 Stage Artifact。")
     return 0

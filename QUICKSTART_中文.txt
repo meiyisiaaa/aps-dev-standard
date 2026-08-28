@@ -42,20 +42,20 @@ aps resume
 aps doctor
 aps status
 
-Bootstrap 时必须让用户确认项目风险级别并写入 .ai/project-profile.json：NORMAL（普通）、LARGE（大型）或 REGULATED（强合规）。所有项目维护 .ai/audit/transitions.jsonl；大型项目按模块或工作流填写 workstreams；Stage 20 Release 前按级别补齐 .ai/release-readiness.json。风险级别不增加 Stage。普通 Stage 满足 Artifact、验收、Verification 和 blocker 条件后，可直接记录 COMPLETE + PASS 并进入 Transition Contract 指定的下一 Stage，不要求用户额外确认“Stage PASS”；用户决策、重大范围 / 方向变化、HOLD / STOP 和 Release approval 仍需确认。
+项目风险级别、Transition audit 和 Release readiness 都是可选元数据；存在时检查，缺失或过期只提示 WARN，不猜测为 NORMAL。普通 Stage 完成实际工作和相关验证后可记录 COMPLETE + PASS 并按需继续；待处理用户决策、明确 HOLD / STOP、安全边界和 Release approval 仍保留为暂停条件。
 
-遇到阻塞后的恢复：
-1. 先运行 aps status，只执行输出的唯一 NEXT。
+遇到问题后的恢复：
+1. 先运行 aps status 查看提示；NEXT 是建议，不要求唯一或必须执行。
 2. 运行状态缺失或无法解析时，先运行 aps doctor --standard-only 获取第一项问题；doctor 不会自动修复坏状态，需人工修复 .ai/state.yaml 后再运行 aps resume --no-launch；损坏状态不会被猜测为 NORMAL。
 3. 普通已有项目用 aps resume；只有 APS 半安装或损坏残留用 aps upgrade 修复；空目录用 aps init。
 4. Standard 版本不匹配或托管文件冲突时，先人工合并 .ai/incoming/<version>/，再运行 aps upgrade；不要自动合并本地修改。
 5. 除非明确接受备份后覆盖，不要使用 --force-managed。
-6. 待决策时运行 aps decision show/list，在当前对话完成决策卡分析，再运行 aps decision answer 或 aps decision cancel。
-7. 风险基线、Transition 审计或 Release readiness 损坏时，APS 会拒绝继续；按 status / doctor 输出的唯一 NEXT 修复，不要猜测为 NORMAL 或手动把 Gate 改成 PASS。
+6. 待决策时运行 aps decision show/list，在当前对话确认问题，再运行 aps decision answer 或 aps decision cancel。
+7. 风险基线、Transition 审计、Release readiness、PRD Snapshot 或 Registry 缺失/过期/普通内容不完整时，APS 给出 WARN 并继续；路径、链接、不可安全读取、运行状态、manifest 和托管文件完整性问题仍会拒绝继续。不要猜测为 NORMAL 或手动把 Gate 改成 PASS。
 
-交接时只携带当前 Stage / Task 和直接引用；Stage User Brief 只在完成、阻塞、暂停或切换对话时输出，不要每轮重复。完成结果必须提醒下一 Stage，以及高影响入口是否应复用已接受计划或先写简短计划。大型项目可以并行 Task，但全局状态、Gate、Decision 和 Registry 仍由 Coordinator 统一维护。
+交接时携带当前 Stage / Task 和直接引用即可；Stage User Brief 有帮助时再输出，不要每轮重复。复杂任务可先写简短计划，但计划不是固定门禁。大型项目可以并行 Task，但全局状态、Gate、Decision 和 Registry 仍由 Coordinator 统一维护。
 
-增量变更：已确认 Scope / Requirements 内且不改变已确认契约的小 Task 留在当前 Stage，只更新差异并做定向验证；新增行为、修改已通过 Gate 的内容或改变技术 / 安全 / Release 约束时进入 Stage 22，使用 `.ai/templates/change-log.md` 做 Impact Analysis，返回最早受影响 Stage。保留未受影响的有效 Artifact；依赖不清楚时扩大验证，不能用小改动绕过 Gate。
+增量变更：已确认 Scope / Requirements 内且不改变已确认契约的小 Task 留在当前 Stage，只更新差异并做定向验证；只有实际改变契约、Scope 或下游影响时，才使用 Stage 22 和 `.ai/templates/change-log.md` 记录并路由。保留未受影响的有效 Artifact；依赖不清楚时扩大验证。
 
 常用：
 aps init        新项目
@@ -71,7 +71,7 @@ PRD 汇总        不新增 PRD 阶段；按需从 .ai/templates/prd-snapshot.md
 
 aps decision request .ai/cycles/CYCLE-001/stages/01-idea/decision-requests/DEC-001.json
 
-统一在当前对话中提出结构化决策问题。提问前必须逐项说明每个选项的优点、缺点、适用条件和主要风险；如果给出推荐，必须说明推荐依据以及什么新证据会改变推荐。完整候选项保留在 Decision Request 中，不限制为 2~3 个选项；多选、排序、自由输入或复杂决策可分轮提问或直接使用自由文本。
+统一在当前对话中提出清晰的决策问题。复杂选择可说明选项取舍、证据和确认方式；简单问题可直接使用自由文本。Decision Request 最小保留问题、状态、Cycle/Stage、input_type、schema_version 和 id；候选项、推荐、影响和 Decision Card 按需填写。
 
 用户回答后记录：
 
@@ -84,7 +84,7 @@ aps decision cancel DEC-001 --reason "范围已调整"
 
 切换对话后运行 `aps status` 或 `aps resume --no-launch`，查看当前 Cycle、阻塞项、待决策和下一步。
 
-以下高影响 Stage 进入时必须先有一份可审查且已接受的计划：01、05、06、07、08、09、10、13、14、15、16、20；Stage 22 有 Active Change 时也相同。当前对话中已接受的计划即可，不需要重复写成第二份文件。原生 Codex Plan 模式可选，不是 Gate；Host 无法打开该模式时，引用或补齐计划后继续执行，`aps status` 只给出 Planning 提示，Codex Host 可以启动普通会话。
+复杂任务可以先写简短计划；没有计划或原生 Codex Plan 模式不可用时仍可启动普通会话。Stage 22 按实际影响使用，不是固定入口门禁。
 
 保护规则：
 - 不要重复执行 init；已有 APS 文件时会拒绝。
