@@ -536,8 +536,6 @@ Release / Cycle Review
 
 每次 Stage / Gate / Cycle 变更都必须追加记录；Stage 变更离开 GATED Stage 前必须有 `COMPLETE + PASS`。普通 Stage 满足 Artifact、Verification 和 blocker 条件后可直接进入 Transition Contract 指定的下一 Stage，不要求用户额外确认“Stage PASS”。APS 会拒绝格式错误、链断裂或最后状态与 `state.yaml` 不一致的审计链。审计记录不能替代 Stage Artifact、Decision Log、Git 或需要用户决策 / Release approval 的 Gate。
 
-首次接管已有项目时，首条记录可以以真实当前 Stage 为 `to_state`，同时使用 `from_state: null`、`adoption: true` 和可核验的 `evidence_refs`。这只记录“APS 从何处开始观察”的边界，不得补写或伪造缺失 Stage 的 PASS；`adoption` 只能用于首条记录，之后仍按正常 COMPLETE / Gate PASS 规则推进。
-
 # 6. 阶段 Artifact 布局与自动创建
 
 阶段 Artifact MUST 隔离在当前 Cycle 下，不堆在仓库根目录。

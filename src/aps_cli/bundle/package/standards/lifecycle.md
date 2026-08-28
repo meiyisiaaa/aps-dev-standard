@@ -149,7 +149,7 @@ Bootstrap MUST 让用户确认一个项目风险级别，并写入 `.ai/project-
 
 风险级别不是新的 Stage，也不能跳过任何当前 Stage。它只决定 Evidence、Release readiness 和审计深度；当数据敏感性、部署拓扑、Scope 或合规义务变化时，必须重新评估级别。大型项目可以并行执行不同 workstream 的 Task / Artifact，但全局 Cycle、Gate 和状态仍由 Coordinator 单写。
 
-所有项目 MUST 追加 `.ai/audit/transitions.jsonl`；`LARGE` / `REGULATED` 的记录和 Evidence 深度更高。每条记录至少包含 from/to state、原因、Actor 和 Evidence refs；记录必须单调追加，最后一条 `to_state` 必须与 `.ai/state.yaml` 一致。首次接管已有项目时，首条记录可用 `from_state: null`、`adoption: true` 和实际当前 Stage 建立可验证边界；它不声明缺失的前置 Stage 已通过，后续 Transition 仍必须满足正常的 Gate / COMPLETE 条件。它补足当前状态快照不能证明历史流转的问题，但不替代 Git、Decision Log 或 Stage Artifact。
+所有项目 MUST 追加 `.ai/audit/transitions.jsonl`；`LARGE` / `REGULATED` 的记录和 Evidence 深度更高。每条记录至少包含 from/to state、原因、Actor 和 Evidence refs；记录必须单调追加，最后一条 `to_state` 必须与 `.ai/state.yaml` 一致。它补足当前状态快照不能证明历史流转的问题，但不替代 Git、Decision Log 或 Stage Artifact。
 
 Transition 审计只能证明当前文件中的格式、顺序和状态链路可校验，不能单独证明历史行未被人为修改或 Evidence 真实有效；需要完整可信度时，仍须结合 Git 历史、仓库权限和人工审查。
 

@@ -434,7 +434,7 @@ def _state_view(value: object, label: str) -> dict[str, Any]:
 
 
 def _validate_transition(record: dict[str, Any], index: int) -> dict[str, Any]:
-    allowed = {"schema_version", "event_id", "recorded_at", "revision", "actor", "reason", "from_state", "to_state", "evidence_refs", "decision_refs", "change_refs", "adoption"}
+    allowed = {"schema_version", "event_id", "recorded_at", "revision", "actor", "reason", "from_state", "to_state", "evidence_refs", "decision_refs", "change_refs"}
     unknown = sorted(set(record) - allowed)
     if unknown:
         raise GovernanceError(f"Transition {index} 包含未知字段：{', '.join(unknown)}")
@@ -458,16 +458,11 @@ def _validate_transition(record: dict[str, Any], index: int) -> dict[str, Any]:
     if from_state is not None:
         _state_view(from_state, f"Transition {index} 的 from_state")
     to_state = _state_view(record["to_state"], f"Transition {index} 的 to_state")
-    adoption = record.get("adoption", False)
-    if not isinstance(adoption, bool):
-        raise GovernanceError(f"Transition {index} 的 adoption 必须是布尔值")
     evidence_refs = _string_list(record["evidence_refs"], f"Transition {index} 的 evidence_refs")
     for key in ("decision_refs", "change_refs"):
         if key in record:
             _string_list(record[key], f"Transition {index} 的 {key}")
     normalized_from = _state_view(from_state, f"Transition {index} 的 from_state") if from_state is not None else None
-    if adoption and normalized_from is not None:
-        raise GovernanceError(f"Transition {index} 的 adoption 仅允许用于首条空状态记录")
     if normalized_from is not None and normalized_from == to_state:
         raise GovernanceError(f"Transition {index} 的 from_state 和 to_state 不能相同")
     if normalized_from is None or normalized_from != to_state:
@@ -483,7 +478,7 @@ def _validate_transition(record: dict[str, Any], index: int) -> dict[str, Any]:
             raise GovernanceError(f"Transition {index} 开始新 Cycle 前必须完成并通过 Stage 23")
         if to_state["stage"] != 1:
             raise GovernanceError(f"Transition {index} 新 Cycle 必须从 Stage 1 开始")
-    return {**record, "from_state": normalized_from, "to_state": to_state, "adoption": adoption}
+    return {**record, "from_state": normalized_from, "to_state": to_state}
 
 
 def validate_transition_log(root: Path, state: dict[str, Any], profile: dict[str, Any]) -> list[str]:
@@ -513,8 +508,6 @@ def validate_transition_log(root: Path, state: dict[str, Any], profile: dict[str
         previous_time = ""
         previous_to: dict[str, Any] | None = None
         for index, record in enumerate(records, 1):
-            if record["adoption"] and index != 1:
-                return ["已有项目接管标记 adoption 只能出现在 Transition 审计首条记录"]
             if record["event_id"] in event_ids:
                 return [f"Transition 审计记录 event_id 重复：{record['event_id']}"]
             event_ids.add(record["event_id"])
@@ -533,8 +526,8 @@ def validate_transition_log(root: Path, state: dict[str, Any], profile: dict[str
         )
         if records[0]["from_state"] is not None:
             return ["Transition 审计链第一条记录必须从空状态开始"]
-        if records[0]["to_state"]["stage"] != 1 and not records[0]["adoption"]:
-            return ["Transition 审计链从非 Stage 1 开始必须显式标记 adoption: true"]
+        if records[0]["to_state"]["stage"] != 1:
+            return ["Transition 审计链必须从 Stage 1 开始"]
         if previous_to != current:
             return ["Transition 审计记录的最后状态与 `.ai/state.yaml` 不一致"]
         if records[-1]["revision"] > state["revision"]:

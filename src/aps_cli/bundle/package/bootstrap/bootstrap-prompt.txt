@@ -18,7 +18,7 @@ APS CLI 恢复边界：普通已有项目使用 `aps resume`；只有检测到 A
 - 待决策时使用 `aps decision show/list`，在当前对话完成决策卡分析，再运行 `aps decision answer` 或 `aps decision cancel`。
 - 仍不确定时保留 blocker，向用户请求决策；`resume` 只恢复，不创建新 Cycle。
 - `.ai/project-profile.json` 缺失或无法解析时，不得猜测为 `NORMAL`；按模板补齐风险基线后再继续。
-- 所有项目必须维护 `.ai/audit/transitions.jsonl`；`LARGE` / `REGULATED` 还必须按模块或工作流填写 `workstreams`；审计链最后一条记录必须与 `.ai/state.yaml` 一致。首次接管已有项目时，首条记录可用 `from_state: null`、`adoption: true` 和实际当前 Stage 建立基线，不得伪造缺失前置 Stage 的 PASS。
+- 所有项目必须维护 `.ai/audit/transitions.jsonl`；`LARGE` / `REGULATED` 还必须按模块或工作流填写 `workstreams`；审计链最后一条记录必须与 `.ai/state.yaml` 一致。
 - 进入 Release 边界前，按风险级别生成 `.ai/release-readiness.json`；所有该级别要求的检查必须有 `PASS` 和 Evidence ref。Release approval、重大范围 / 方向变化和其他明确的用户决策仍单独保留为 Gate 语义；普通 Stage PASS 不要求用户额外确认。
 
 交接只携带当前 Stage / Task、直接上游有效 Artifact、明确引用的 Source 和当前 blocker；不要把完整 Standard、旧 Cycle 或无关 Research 复制进 handoff。
@@ -32,8 +32,8 @@ Bootstrap 顺序：
 4. 从 `.ai/templates/project-profile.json` 创建项目风险基线；向用户确认 `NORMAL` / `LARGE` / `REGULATED`，填写复核时间和 workstreams。大型项目按模块或工作流拆分，不增加新的 Stage。
 5. 检测当前 Host，并读取 / 初始化 `.ai/runtime/hosts/<HOST-ID>.yaml`；Host capability 不写成唯一全局项目状态。
 6. 恢复 Source of Truth、Cycle、Stage / Stage Type / stage_status、适用时的 gate_status、Scope、blockers、Active Change、Pending Decision refs 与 revision。
-7. 初始 Bootstrap 或每次 Stage / Gate / Cycle 变更都追加一条结构化 Transition 记录到 `.ai/audit/transitions.jsonl`；记录包含 from/to state、原因和 Evidence refs，不得删除或改写历史行。已有项目首次接管可用 `adoption: true` 从真实当前 Stage 建立首条记录。
-8. 已有项目先读取实际代码和当前有效 Artifact，判断真实 Stage；不要把旧项目伪装成新项目、伪造前置 Stage PASS，或默认从 Build 开始。
+7. 初始 Bootstrap 或每次 Stage / Gate / Cycle 变更都追加一条结构化 Transition 记录到 `.ai/audit/transitions.jsonl`；记录包含 from/to state、原因和 Evidence refs，不得删除或改写历史行。
+8. 已有项目先读取实际代码和当前有效 Artifact，判断真实 Stage；不要把旧项目伪装成新项目，也不要默认从 Build 开始。
 9. 普通任务只加载 `.ai/registry.yaml` 指向的当前 Stage / Task 最小必要 Source；旧 Cycle、历史研究和完整 Standard 按需加载。
 10. 每次修改前先判断是否仍在已确认 Scope / Requirements 内：没有改变已确认产品、交互、设计、技术、安全或 Release 契约的局部 Task 留在当前 Stage，只更新受影响 Artifact 并执行定向验证；改变已通过 Gate 的内容、用户行为、约束或由真实反馈触发的 Change 进入 Stage 22，使用 `.ai/templates/change-log.md` 做 Impact Analysis，保留有效 Artifact，沿 Registry 依赖闭包重新验证；依赖不清楚时采用更宽验证，不得用局部检查替代必需 Gate / Release 检查。
 11. 使用 Agent Skill 时，解析当前 Host 的项目级 discovery 位置，检查 Skill 结构、路径、同名冲突、触发与最小 Smoke Eval。未注册或未验证的 Skill 不得假装已生效。

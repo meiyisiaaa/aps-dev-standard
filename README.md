@@ -78,8 +78,6 @@ aps resume
 
 `resume` 会按实际项目状态恢复或启动 Host；需要只输出可复制 handoff 时加 `--no-launch`。在有效 manifest 存在后，重复 `resume` 只恢复状态，不升级或修改项目。普通已有项目不要用 `upgrade` 越权接管；半安装或损坏的 APS 残留才使用 `upgrade` 修复；空目录使用 `init`。
 
-首次接管已有项目时，以真实当前状态初始化 `CYCLE-001`：首条 Transition 可使用 `from_state: null`、`adoption: true` 和实际 Evidence refs 直接落在当前 Stage。不要补写虚假的 Stage 01–14 PASS，也不要仅为此创建 Rebaseline Cycle；后续 Transition 仍必须满足正常的 `COMPLETE` / Gate `PASS` 约束。
-
 遇到阻塞时先运行 `aps status`，只执行输出的唯一 `NEXT`。运行状态缺失或损坏时，先运行 `aps doctor --standard-only` 获取第一项问题；`doctor` 不会替你猜测或改写坏状态，需人工修复 `.ai/state.yaml` 后再运行 `aps resume --no-launch`。Standard 版本不匹配或出现托管文件冲突时，先审查 `.ai/incoming/<version>/`，人工合并后再运行 `aps upgrade`；APS 不会自动合并本地修改。除非明确接受“备份后覆盖”，不要使用 `--force-managed`。
 
 如果 `.ai/project-profile.json`、Transition 审计或 Release readiness 损坏，APS 会 fail-closed；按 `status` / `doctor` 输出的唯一 `NEXT` 修复，不要把风险级别猜成 `NORMAL`，也不要手动把 Gate 改成 PASS。

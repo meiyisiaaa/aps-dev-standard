@@ -283,7 +283,7 @@ def main() -> int:
         run_python("aps.py", "init", str(project), "--host", "generic", "--no-launch", "--no-git")
         run_python("aps.py", "doctor", str(project), "--host", "generic", "--standard-only")
         bootstrap_prompt = (project / ".ai" / "bootstrap" / "bootstrap-prompt.txt").read_text(encoding="utf-8")
-        required_prompt_markers = ("优点", "缺点", "适用条件", "主要风险", "直接回答原始研究问题", "分析关键证据", "用户需要 PRD 时", "prd-snapshot.md", "Stage User Brief", "不要每轮对话重复", "当前 Stage / Task", "下一阶段入口提醒", "不要求用户额外确认“Stage PASS”", "Impact Analysis", "定向验证", ".ai/templates/change-log.md", "adoption: true")
+        required_prompt_markers = ("优点", "缺点", "适用条件", "主要风险", "直接回答原始研究问题", "分析关键证据", "用户需要 PRD 时", "prd-snapshot.md", "Stage User Brief", "不要每轮对话重复", "当前 Stage / Task", "下一阶段入口提醒", "不要求用户额外确认“Stage PASS”", "Impact Analysis", "定向验证", ".ai/templates/change-log.md")
         if any(marker not in bootstrap_prompt for marker in required_prompt_markers):
             raise SystemExit("bootstrap prompt does not require decision and research analysis")
         planning_prompt_markers = ("原生 Codex Plan 模式", "已接受的计划", "不阻塞执行", "Stage 01、05、06、07、08、09、10、13、14、15、16、20")
@@ -321,51 +321,6 @@ def main() -> int:
         legacy_resume = run_python_capture("aps.py", "resume", str(legacy), "--host", "codex", "--no-launch")
         if "尚未完成风险基线" not in legacy_resume or "APS Agent Handoff" not in legacy_resume:
             raise SystemExit("legacy governed project did not enter safe governance bootstrap")
-
-        late_adoption = temp / "late-adoption-project"
-        run_python("aps.py", "init", str(late_adoption), "--host", "generic", "--no-launch", "--no-git")
-        for filename in ("decisions.md", "registry.yaml", "project-profile.json"):
-            (late_adoption / ".ai" / filename).write_text(
-                (late_adoption / ".ai" / "templates" / filename).read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
-        late_state = late_adoption / ".ai" / "state.yaml"
-        late_state.write_text(
-            (late_adoption / ".ai" / "templates" / "state.yaml").read_text(encoding="utf-8"),
-            encoding="utf-8",
-        )
-        late_state.write_text(
-            late_state.read_text(encoding="utf-8").replace("stage: 1", "stage: 15"),
-            encoding="utf-8",
-        )
-        adoption_record = json.loads(
-            (late_adoption / ".ai" / "templates" / "transition-record.json").read_text(encoding="utf-8")
-        )
-        adoption_record.update(
-            {
-                "event_id": "TRN-ADOPTION-001",
-                "recorded_at": "2026-08-27T00:00:01+00:00",
-                "reason": "Existing project adoption at verified Stage 15",
-                "to_state": {
-                    "cycle": "CYCLE-001",
-                    "stage": 15,
-                    "stage_type": "GATED",
-                    "stage_status": "ACTIVE",
-                    "gate_status": "PENDING",
-                },
-                "evidence_refs": ["approved-plan.md"],
-                "adoption": True,
-            }
-        )
-        late_audit = late_adoption / ".ai" / "audit" / "transitions.jsonl"
-        late_audit.parent.mkdir(parents=True, exist_ok=True)
-        late_audit.write_text(json.dumps(adoption_record, ensure_ascii=False) + "\n", encoding="utf-8")
-        run_python("aps.py", "doctor", str(late_adoption), "--host", "generic")
-        adoption_record.pop("adoption")
-        late_audit.write_text(json.dumps(adoption_record, ensure_ascii=False) + "\n", encoding="utf-8")
-        unmarked_adoption = run_python_expect_failure_capture("aps.py", "status", str(late_adoption))
-        if "adoption: true" not in unmarked_adoption:
-            raise SystemExit("late-stage adoption without an explicit marker was accepted")
 
         ordinary = temp / "ordinary-project"
         ordinary.mkdir()
@@ -605,6 +560,15 @@ def main() -> int:
         broken_audit = run_python_expect_failure_capture("aps.py", "status", str(project))
         if "最后状态" not in broken_audit or "transitions.jsonl" not in broken_audit:
             raise SystemExit("transition audit mismatch was not rejected")
+        non_stage_one = {
+            **transition,
+            "event_id": "TRN-NONSTAGEONE-001",
+            "to_state": {**transition["to_state"], "stage": 2},
+        }
+        audit.write_text(json.dumps(non_stage_one, ensure_ascii=False) + "\n", encoding="utf-8")
+        non_stage_one_output = run_python_expect_failure_capture("aps.py", "status", str(project))
+        if "必须从 Stage 1 开始" not in non_stage_one_output:
+            raise SystemExit("non-Stage-1 first transition was accepted")
         non_initial = {
             **transition,
             "event_id": "TRN-NONINITIAL-001",

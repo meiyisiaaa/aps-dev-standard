@@ -30,7 +30,7 @@
     ".ai/templates/design-system-skill/references/README.md"
   ],
   "payload_sha256": {
-    "bootstrap/bootstrap-prompt.txt": "5cef963d985efbddf24c997100ff5274f53a914cc355293785d95c2019c0b5b1",
+    "bootstrap/bootstrap-prompt.txt": "ca357ffe64a672cbb561f1aae74766859a1f9993655bf6dd2f2ac0dd3c6e6c3c",
     "bootstrap/rebaseline-existing-project.txt": "146c4e399d773310088a8317f89062461463516253f3b8396e20237ec2a524b7",
     "gitignore.fragment": "48dcd6fba9419b86a90a332de00eada9ade22ab5bfb3d23314241c675057c5c6",
     "schemas/decision-request.schema.json": "191784897b32339f1734e70cefdd96adafe633674c217ddc58e164457ff3f933",
@@ -38,9 +38,9 @@
     "schemas/registry.schema.json": "382ac3106e925a4531702529857f1a7938d437fb8d09d10d97b55e714becda1a",
     "schemas/release-readiness.schema.json": "1bfad9f5c24f94affbbcafb04b41b92fca7a064a89a68cd72d550d3bddde0f7a",
     "schemas/state.schema.json": "dfdd99b9efd7aa72b8f6743d03eeeb76a70fa566072d380090d86b50eebed864",
-    "schemas/transition-record.schema.json": "ef91165207438f54bff0847f5681838804e5ba75f843824842517976b87bdcae",
-    "standards/artifact-state.md": "c3dc30332e962b12ef9400cbb36d9134568d959d5bcf36c1fc52721be2e44bf5",
-    "standards/lifecycle.md": "3423d61bbf52c45642ea34ddf3755eb89b22fae8b097857e7b59c4fb222aa328",
+    "schemas/transition-record.schema.json": "79ecc3d24330bf6ff875daf51f192a56d279cc2fd1058580cbc2b9fe9bb2fafb",
+    "standards/artifact-state.md": "9025224db3e653c871cee99afe6944824a41b1b29305ecba5c4da0490bd60b39",
+    "standards/lifecycle.md": "d9fba80ad35267a7fa6d9856cb1387e69ddb4cdf1ae046249e0691a7819628b6",
     "templates/AGENTS.block.md": "bcd70b4d1c3ee5e1915b3f35f62a9963e26d4314447f61998d78565bcb358b83",
     "templates/change-log.md": "e1a7517bccf88ea3270ce0a71c8b51d60005c9e61f5e92859404256e5ea207aa",
     "templates/decision-request.json": "079131f4d3153a48b8e4d5ade6eff410bdcc33a98d3a979bc156969305167af0",
