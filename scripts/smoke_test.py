@@ -283,7 +283,7 @@ def main() -> int:
         run_python("aps.py", "init", str(project), "--host", "generic", "--no-launch", "--no-git")
         run_python("aps.py", "doctor", str(project), "--host", "generic", "--standard-only")
         bootstrap_prompt = (project / ".ai" / "bootstrap" / "bootstrap-prompt.txt").read_text(encoding="utf-8")
-        required_prompt_markers = ("优点", "缺点", "适用条件", "主要风险", "直接回答原始研究问题", "分析关键证据", "用户需要 PRD 时", "prd-snapshot.md", "Stage User Brief", "不要每轮对话重复", "当前 Stage / Task", "下一阶段入口提醒", "不要求用户额外确认“Stage PASS”")
+        required_prompt_markers = ("优点", "缺点", "适用条件", "主要风险", "直接回答原始研究问题", "分析关键证据", "用户需要 PRD 时", "prd-snapshot.md", "Stage User Brief", "不要每轮对话重复", "当前 Stage / Task", "下一阶段入口提醒", "不要求用户额外确认“Stage PASS”", "Impact Analysis", "定向验证", ".ai/templates/change-log.md")
         if any(marker not in bootstrap_prompt for marker in required_prompt_markers):
             raise SystemExit("bootstrap prompt does not require decision and research analysis")
         plan_prompt_markers = ("Codex", "Plan 模式", "Stage 01、05、06、07、08、09、10、13、14、15、16、20", "Host capability blocker")
@@ -293,6 +293,8 @@ def main() -> int:
         before_repeat = snapshot_files(project)
         if not (project / ".ai" / "templates" / "prd-snapshot.md").is_file():
             raise SystemExit("PRD Snapshot template was not installed")
+        if not (project / ".ai" / "templates" / "change-log.md").is_file():
+            raise SystemExit("Change Impact template was not installed")
         run_python_expect_failure("aps.py", "init", str(project), "--host", "generic", "--no-launch", "--force-mode")
         if snapshot_files(project) != before_repeat:
             raise SystemExit("repeated init changed the governed project")
@@ -510,8 +512,8 @@ def main() -> int:
         state.write_text(normal_state.replace("revision: 1", "revision: 3").replace("stage: 1", "stage: 22").replace("stage_type: GATED", "stage_type: ROUTER").replace("gate_status: PENDING", "gate_status: null").replace("active_change_refs: []", "active_change_refs: [CHANGE-001]"), encoding="utf-8")
         write_transition_audit(project)
         change_status = run_python_capture("aps.py", "status", str(project))
-        if "Mode gate: PLAN (required on Stage entry)" not in change_status:
-            raise SystemExit("status did not require Plan mode for an active Stage 22 change")
+        if "Mode gate: PLAN (required on Stage entry)" not in change_status or "Active changes: CHANGE-001" not in change_status or "Impact Analysis" not in change_status:
+            raise SystemExit("status did not expose the active Change route")
         state.write_text(normal_state, encoding="utf-8")
         profile_bytes = profile.read_bytes()
         audit = project / ".ai" / "audit" / "transitions.jsonl"

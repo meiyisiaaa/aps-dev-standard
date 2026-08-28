@@ -168,6 +168,30 @@ Transition 审计只能证明当前文件中的格式、顺序和状态链路可
 
 Stage User Brief 是用户交接摘要，不是完成证明；Stage Artifact 的 Artifact Contract、验收条件和 Gate / Transition 仍必须满足。
 
+### 0.3.3 Proportional Change / Incremental Validation
+
+23 个 Stage 是统一的治理契约，不代表每个小改动都要从头重跑。变更先按影响范围分类：
+
+```text
+仍在已确认 Scope / Requirements 内，且不改变已确认 UX、UI、Architecture、Security 或 Release 条件
+→ 留在当前 Stage / Task
+→ 只更新真正受影响的 Artifact
+→ 执行该 Task 和受影响链路的最小必要验证
+
+改变已通过 Gate 的内容、用户行为 / 流程、设计基座、技术 / 安全约束，或由真实反馈触发
+→ 进入 Stage 22 Iterate
+→ 路由到受影响的最早 Stage
+→ 重新验证该 Stage 及其下游依赖
+
+改变产品目标、重大 Scope、风险级别或 Release 条件
+→ 进入 Change Control 和用户决策
+→ 必要时在当前 Cycle 关闭后创建新的 Rebaseline Cycle
+```
+
+每个 Change 的 Impact Analysis MUST 记录：Change ID、Scope Delta、最早受影响 Stage、受影响 Artifact / 文件、仍可复用的 Artifact 及理由、需要重新验证或 supersede 的 Artifact、最小验证集合、触发完整回归的条件、Release 影响和 Decision refs。推荐使用 `.ai/templates/change-log.md` 作为记录起点。
+
+增量验证可以减少无关重复检查，但不得省略当前 Stage、受影响下游 Stage、Gate 或 Release readiness 的必需验证。依赖图缺失、引用无法解析或影响范围不确定时，必须采用更宽的验证范围，而不是乐观地只跑局部检查。
+
 规则：
 
 ```text
@@ -3241,6 +3265,8 @@ Change
 AI → AI Spec / Eval
 ```
 
+Stage 22 先完成 Impact Analysis，再决定是否需要路由。已确认 Scope 内且没有改变任何已确认契约的局部 Task 可以留在当前 Stage；一旦改变已通过 Gate 的内容或引入新的行为 / 约束，不能用局部验证代替 Stage 22 和最早受影响 Stage 的重新验证。
+
 所有新增需求先进入 Backlog。
 
 不得直接开发。
@@ -3448,6 +3474,7 @@ Skill 修改前应先把真实 Failure Signal 固化为 Eval Case；修改后必
 Change ID
 修改内容
 原因
+Scope Delta
 影响阶段
 影响功能
 影响 Requirements
@@ -3455,10 +3482,18 @@ Change ID
 影响 UI
 影响技术
 影响安全
+受影响 Artifact / 文件
+仍可复用 Artifact 及理由
+需要重新验证 / supersede 的 Artifact
+最小验证集合
+触发完整回归的条件
+Release 影响
 需要重新验证什么
 ```
 
 重大变更必须向用户提问。
+
+如果变更仍在已确认 Scope 内，且没有改变已确认的产品、交互、设计、技术、安全或 Release 契约，可作为当前 Task 的增量修改；仍需记录受影响文件和验证结果。否则必须进入 Stage 22，由 Router 将 Change 路由至受影响的最早 Stage。Router 不产生 PASS，也不允许用“只改了一个文件”跳过下游验收。
 
 典型回退：
 

@@ -420,6 +420,10 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
     pending = [ref for ref in state.get("pending_decision_refs", []) if isinstance(ref, str)]
     if pending:
         lines.append(f"Pending decisions: {', '.join(pending)}")
+    active_changes = [ref for ref in state.get("active_change_refs", []) if isinstance(ref, str)]
+    if active_changes:
+        lines.append(f"Active changes: {', '.join(active_changes)}")
+        lines.append("Change action: 读取当前 Cycle 的 `22_CHANGE_LOG.md`，先完成 Impact Analysis，再只重跑受影响 Stage 和验证。")
     blockers = state.get("blockers", [])
     for blocker in blockers:
         if isinstance(blocker, dict):
@@ -442,6 +446,8 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
                 f"在当前对话完成 {', '.join(pending)} 的决策卡分析并回答，"
                 f"然后运行 `aps decision answer {pending[0]} <ANSWER>`。"
             )
+        elif active_changes:
+            next_action = "读取 `.ai/templates/change-log.md` 完成 Impact Analysis；确认最早受影响 Stage 后再执行变更。"
         elif blockers:
             next_action = "解决以上 blocker，并重新运行 `aps status`。"
         elif stage_ready:

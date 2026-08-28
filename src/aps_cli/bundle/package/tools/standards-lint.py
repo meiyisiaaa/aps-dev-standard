@@ -123,6 +123,7 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
         "## 0.13 Gate State Machine",
         "### 0.3.1 Stage Entry / Host Plan Mode",
         "### 0.3.2 Project Risk Profile / Workstream",
+        "### 0.3.3 Proportional Change / Incremental Validation",
         "# 31. Agent Runtime Standard",
         "## 32.4 Skill Security Contract",
         "# 35. Multi-Agent Concurrency & Governance",
@@ -194,6 +195,34 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
             report.pass_(f"artifact section present: {s}")
         else:
             report.error(f"missing artifact section: {s}")
+
+    impact_markers = (
+        "Impact Analysis",
+        "Earliest Stage",
+        "Retained Artifacts",
+        "Minimum Verification",
+        "Full Regression Trigger",
+        "依赖图缺失",
+    )
+    if all(marker in life + "\n" + art + "\n" + boot for marker in impact_markers):
+        report.pass_("proportional Change routing and incremental validation contract present")
+    else:
+        report.error("Change impact and incremental validation contract is incomplete")
+
+    change_template = lifecycle.parent.parent / "templates" / "change-log.md"
+    change_text = read(change_template, report)
+    change_template_markers = (
+        "## Artifact Contract",
+        "## CHANGE-XXX",
+        "Earliest Stage:",
+        "Affected Artifacts:",
+        "Minimum Verification:",
+        "Full Regression Trigger:",
+    )
+    if change_text and all(marker in change_text for marker in change_template_markers):
+        report.pass_("Change Impact template is available")
+    elif change_text:
+        report.error("Change Impact template is incomplete")
 
     if "不要先完整读取两份 Standard" in boot:
         report.pass_("bootstrap explicitly forbids eager full-standard loading")

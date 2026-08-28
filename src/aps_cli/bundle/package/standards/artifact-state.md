@@ -810,6 +810,37 @@ Visual QA
 
 只有真正受影响的 Source of Truth 才更新。
 
+Registry 中启用依赖图时，使用现有 `artifacts` 和 `dependencies` 对象记录最小可查询关系，不新增第二套状态：
+
+```yaml
+artifacts:
+  requirements:
+    path: .ai/cycles/CYCLE-001/stages/08-requirements/08_REQUIREMENTS.md
+    stage: 8
+    status: ACTIVE
+    depends_on: [product_dna, functions]
+    verification: [requirements-review]
+
+dependencies:
+  product_dna: [functions, requirements, ux, ui]
+```
+
+具体 ID、路径和验证名由项目按实际 Artifact 填写；空 Registry 不得被 Agent 当成“没有依赖”。Change 至少按以下顺序处理：
+
+```text
+定位改变的 Source of Truth
+↓
+沿 dependencies 找出下游闭包
+↓
+确定最早受影响 Stage
+↓
+保留闭包外仍有效的 Artifact
+↓
+更新闭包内 Artifact，并执行 Stage / Gate 要求的验证
+```
+
+如果 Registry 尚未建立可靠依赖关系，AI MUST 明确记录“不确定影响范围”，采用保守的下游验证；不得以最新修改时间、全文搜索或文件数量推断哪些内容可以跳过。
+
 ---
 
 再例如：
@@ -996,13 +1027,31 @@ Requested Change:
 
 Reason:
 
+Signal / Evidence:
+
+Scope Delta:
+
 Affected Stages:
 
 Affected Files:
 
 Impact:
 
+Earliest Stage:
+
+Affected Artifacts:
+
+Retained Artifacts and Reason:
+
+Needs Revalidation / Superseded Artifacts:
+
+Minimum Verification:
+
+Full Regression Trigger:
+
 Revalidation Required:
+
+Release Impact:
 
 User Decision:
 ```
@@ -1069,6 +1118,16 @@ VISUAL REFERENCE
 
 DESIGN SYSTEM IMPACT
 
+AFFECTED ARTIFACTS
+
+RETAINED INPUTS
+
+NEEDS REVALIDATION / SUPERSEDED ARTIFACTS
+
+MINIMUM VERIFICATION
+
+FULL REGRESSION TRIGGER
+
 STATES
 
 ACCEPTANCE CRITERIA
@@ -1113,6 +1172,8 @@ Review 完成
 必要文档更新
 必要监控存在
 ```
+
+Task 的验证清单应来自 Impact Analysis：定向验证用于减少无关重复，但不能删除当前 Stage、受影响下游 Stage、Gate 或 Release readiness 的必需检查。
 
 才允许：
 

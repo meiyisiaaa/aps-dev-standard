@@ -132,6 +132,8 @@ Before ending, pausing, blocking, or handing off any Stage, output a one-page St
 
 交接优化：Stage User Brief 只在阶段完成、阻塞、暂停或切换对话时输出，不要求每轮重复；完成结果必须提醒 Transition Contract 指定的下一 Stage，以及该 Stage 是否需要先打开 Plan 模式；handoff 只携带当前 Stage / Task 和直接引用，旧 Cycle 与完整 Standard 按需读取。大型项目的并行 Task 只交接变更文件、接口影响、依赖状态和 Evidence refs，由 Coordinator 统一更新全局治理状态。
 
+增量变更：仍在已确认 Scope / Requirements 内、且不改变已确认契约的局部 Task 留在当前 Stage，只做差异更新和定向验证；新增行为、修改已通过 Gate 的内容或改变技术 / 安全 / Release 约束时，进入 Stage 22，使用 `.ai/templates/change-log.md` 做 Impact Analysis，路由到最早受影响 Stage。保留未受影响的有效 Artifact；依赖不清楚时扩大验证范围，不能用“只改一个文件”跳过必需 Gate 或 Release 检查。
+
 研究路径：先在当前对话直接回答原始问题并分析关键证据，再把完整报告写入 Stage Artifact；使用 `aps research brief <ARTIFACT>` 展示摘要。Artifact 必须包含稳定的 `## Research Brief` 标识和六类必需字段，缺失时按 CLI 提示补齐。
 
 PRD 路径：APS 不增加独立 PRD Stage。Stage 08 `08_REQUIREMENTS.md` 仍是需求核心来源；需要单页产品视图时，可将 `.ai/templates/prd-snapshot.md` 复制到当前 Cycle 的 `08-requirements/08_PRD_SNAPSHOT.md`，并只引用 Stage 05–09 的有效 Artifact 与 `DEC-*`。它是可选派生汇总，不是第二个 Source of Truth，也不新增 Gate。

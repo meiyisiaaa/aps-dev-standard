@@ -55,6 +55,8 @@ Bootstrap 时必须让用户确认项目风险级别并写入 .ai/project-profil
 
 交接时只携带当前 Stage / Task 和直接引用；Stage User Brief 只在完成、阻塞、暂停或切换对话时输出，不要每轮重复。完成结果必须提醒下一 Stage，以及目标 Stage 是否需要先打开 Plan 模式。大型项目可以并行 Task，但全局状态、Gate、Decision 和 Registry 仍由 Coordinator 统一维护。
 
+增量变更：已确认 Scope / Requirements 内且不改变已确认契约的小 Task 留在当前 Stage，只更新差异并做定向验证；新增行为、修改已通过 Gate 的内容或改变技术 / 安全 / Release 约束时进入 Stage 22，使用 `.ai/templates/change-log.md` 做 Impact Analysis，返回最早受影响 Stage。保留未受影响的有效 Artifact；依赖不清楚时扩大验证，不能用小改动绕过 Gate。
+
 常用：
 aps init        新项目
 aps resume      首次接管旧项目，之后只恢复状态

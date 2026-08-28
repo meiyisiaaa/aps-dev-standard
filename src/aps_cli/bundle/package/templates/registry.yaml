@@ -40,6 +40,17 @@ sources:
     status: ACTIVE
     load_policy: release-only
 
+# Optional Artifact dependency graph. Fill only for real project Sources of Truth;
+# do not invent nodes just to make the graph look complete.
+# artifacts:
+#   requirements:
+#     path: .ai/cycles/CYCLE-001/stages/08-requirements/08_REQUIREMENTS.md
+#     stage: 8
+#     status: ACTIVE
+#     depends_on: [product_dna, functions]
+#     verification: [requirements-review]
+# dependencies:
+#   product_dna: [functions, requirements, ux, ui]
 artifacts: {}
 dependencies: {}
 critical_skills: {}

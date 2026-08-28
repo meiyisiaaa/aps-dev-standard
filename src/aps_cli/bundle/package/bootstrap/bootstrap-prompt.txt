@@ -35,15 +35,16 @@ Bootstrap 顺序：
 7. 初始 Bootstrap 或每次 Stage / Gate / Cycle 变更都追加一条结构化 Transition 记录到 `.ai/audit/transitions.jsonl`；记录包含 from/to state、原因和 Evidence refs，不得删除或改写历史行。
 8. 已有项目先读取实际代码和当前有效 Artifact，判断真实 Stage；不要把旧项目伪装成新项目，也不要默认从 Build 开始。
 9. 普通任务只加载 `.ai/registry.yaml` 指向的当前 Stage / Task 最小必要 Source；旧 Cycle、历史研究和完整 Standard 按需加载。
-10. 使用 Agent Skill 时，解析当前 Host 的项目级 discovery 位置，检查 Skill 结构、路径、同名冲突、触发与最小 Smoke Eval。未注册或未验证的 Skill 不得假装已生效。
-11. 若文档、代码、状态、Skill 与已确认 Decision 冲突：新增 blocker；GATED Stage 设 `gate_status=PENDING`，非 GATED Stage 设 `stage_status=BLOCKED`；不要自行选择真相。
-12. 执行当前 Stage Contract / Transition Contract；不要一次执行整个开发周期。
-13. 进入或恢复以下 Stage 时，必须先在当前 Agent Host 中打开原生 Plan 模式（Codex Host 使用 Codex Plan 模式），再进行任何文件修改或其他工作区变更：Stage 01、05、06、07、08、09、10、13、14、15、16、20。首次进入、从上游返修回来、或范围 / 方向发生变化时重新执行一次；计划确认后可切换普通模式执行。Stage 22 在存在 Active Change 时同样执行。每个普通对话轮次不重复规划。
-14. 如果当前 Host 无法打开或确认原生 Plan 模式，不得假装已满足；先记录 Host capability blocker，并停止会修改工作区的动作，等待用户在 Host 中切换或提供已记录的等价 fallback。
-15. 全局治理写入遵守 Single Writer、revision 与 compare-before-write；子 Agent 不直接覆盖全局治理 Artifact。
-16. 只有满足当前 Transition / Gate 条件并完成 Validation 后才推进。普通 Stage 的 Artifact、验收条件、Verification 和 blocker 条件满足后，Agent / Coordinator 可直接记录 `COMPLETE + PASS` 并进入 Transition Contract 指定的下一 Stage，不要求用户额外确认“Stage PASS”。需要用户决策、重大范围 / 方向变化、HOLD / STOP 或 Release approval 时必须停止并请求用户确认。
-17. 每个 Stage 在完成、阻塞、暂停或切换对话前，必须在当前对话输出一页 Stage User Brief，固定包含：目标、输入、已完成、未完成、用户决策、确认影响、下一阶段入口提醒、验证结果。普通 Stage 输出简报后可直接推进；简报不替代 Artifact Contract、验收条件和 Gate / Transition。
-18. 用户需要 PRD 时，不创建新的 Stage；以 Stage 08 Requirements 为核心，按需使用 `.ai/templates/prd-snapshot.md` 生成派生汇总。每个关键结论引用当前有效 Artifact 或 `DEC-*`，PRD Snapshot 不替代 Requirements、UX、Architecture、Security 或 Gate。
+10. 每次修改前先判断是否仍在已确认 Scope / Requirements 内：没有改变已确认产品、交互、设计、技术、安全或 Release 契约的局部 Task 留在当前 Stage，只更新受影响 Artifact 并执行定向验证；改变已通过 Gate 的内容、用户行为、约束或由真实反馈触发的 Change 进入 Stage 22，使用 `.ai/templates/change-log.md` 做 Impact Analysis，保留有效 Artifact，沿 Registry 依赖闭包重新验证；依赖不清楚时采用更宽验证，不得用局部检查替代必需 Gate / Release 检查。
+11. 使用 Agent Skill 时，解析当前 Host 的项目级 discovery 位置，检查 Skill 结构、路径、同名冲突、触发与最小 Smoke Eval。未注册或未验证的 Skill 不得假装已生效。
+12. 若文档、代码、状态、Skill 与已确认 Decision 冲突：新增 blocker；GATED Stage 设 `gate_status=PENDING`，非 GATED Stage 设 `stage_status=BLOCKED`；不要自行选择真相。
+13. 执行当前 Stage Contract / Transition Contract；不要一次执行整个开发周期。
+14. 进入或恢复以下 Stage 时，必须先在当前 Agent Host 中打开原生 Plan 模式（Codex Host 使用 Codex Plan 模式），再进行任何文件修改或其他工作区变更：Stage 01、05、06、07、08、09、10、13、14、15、16、20。首次进入、从上游返修回来、或范围 / 方向发生变化时重新执行一次；计划确认后可切换普通模式执行。Stage 22 在存在 Active Change 时同样执行。每个普通对话轮次不重复规划。
+15. 如果当前 Host 无法打开或确认原生 Plan 模式，不得假装已满足；先记录 Host capability blocker，并停止会修改工作区的动作，等待用户在 Host 中切换或提供已记录的等价 fallback。
+16. 全局治理写入遵守 Single Writer、revision 与 compare-before-write；子 Agent 不直接覆盖全局治理 Artifact。
+17. 只有满足当前 Transition / Gate 条件并完成 Validation 后才推进。普通 Stage 的 Artifact、验收条件、Verification 和 blocker 条件满足后，Agent / Coordinator 可直接记录 `COMPLETE + PASS` 并进入 Transition Contract 指定的下一 Stage，不要求用户额外确认“Stage PASS”。需要用户决策、重大范围 / 方向变化、HOLD / STOP 或 Release approval 时必须停止并请求用户确认。
+18. 每个 Stage 在完成、阻塞、暂停或切换对话前，必须在当前对话输出一页 Stage User Brief，固定包含：目标、输入、已完成、未完成、用户决策、确认影响、下一阶段入口提醒、验证结果。普通 Stage 输出简报后可直接推进；简报不替代 Artifact Contract、验收条件和 Gate / Transition。
+19. 用户需要 PRD 时，不创建新的 Stage；以 Stage 08 Requirements 为核心，按需使用 `.ai/templates/prd-snapshot.md` 生成派生汇总。每个关键结论引用当前有效 Artifact 或 `DEC-*`，PRD Snapshot 不替代 Requirements、UX、Architecture、Security 或 Gate。
 
 Stage User Brief 最小模板（只在完成、阻塞、暂停或交接时填写，不要每轮对话重复）：
 ```text
