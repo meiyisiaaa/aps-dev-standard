@@ -297,7 +297,7 @@ def _install() -> int:
             print(f"加入前可直接运行：{launcher}")
     else:
         print(f"\nPATH：已包含 {bin_dir}")
-    print("NEXT  进入项目目录后运行 `aps`；新项目用 `aps init --no-launch`，已有项目用 `aps resume --no-launch`。")
+    print("NEXT  进入项目目录后运行 `aps`；新项目用 `aps init`，已有项目用 `aps resume`；只想复制 handoff 时加 `--no-launch`。")
     return 0
 
 

@@ -1,8 +1,8 @@
 # AI 产品开发生命周期标准（Full-Cycle Engineering Standard）
 
-**Standard Version:** `1.3.5`<br>
+**Standard Version:** `1.3.6`<br>
 **Status:** `ACTIVE`  
-**Companion Artifact Standard:** `1.3.5`
+**Companion Artifact Standard:** `1.3.6`
 
 > 本标准定义 AI 参与产品开发时的统一生命周期、Stage Contract、Gate、Agent Runtime、Skill、验证、追踪和变更规则。  
 > AI 必须按阶段推进；不得用未确认假设替代重大决策，不得绕过关键 Gate，不得把聊天内容视为已经落盘的项目状态。  
@@ -123,19 +123,19 @@ Failure Route
 Downstream Dependencies
 ```
 
-### 0.3.1 Stage Entry / Host Plan Mode
+### 0.3.1 Stage Entry / Planning
 
-Codex Plan 模式是 Stage 入口的 Host 交互约束，不是新的 GateStatus，也不替代 Decision Request。以下 Stage 在首次进入、从上游返修回来，或范围 / 方向发生变化时，必须先打开原生 Codex Plan 模式：
+以下高影响 Stage 在首次进入、从上游返修回来，或范围 / 方向发生变化时，必须先有一份可审查且已接受的计划；用户在当前对话中已接受的计划即可，不要求重复写成第二份文件：
 
 ```text
 Stage 01、05、06、07、08、09、10、13、14、15、16、20
 ```
 
-Stage 22 在存在 Active Change 时同样需要 Plan 模式。Plan 阶段至少应明确输入、约束、候选方案、风险、受影响 Artifact、验证方式和下一步；计划被用户接受后，才可切换普通模式执行。该确认只约束需要 Plan 的 Stage 入口，不等于每个普通 Stage PASS 都要再次向用户索取确认。普通对话轮次不需要重复规划。
+Stage 22 在存在 Active Change 时同样需要计划。计划至少说明输入、约束、候选方案、风险、受影响 Artifact、验证方式和下一步；该确认只约束高影响 Stage 的入口，不等于每个普通 Stage PASS 都要再次向用户索取确认。普通对话轮次不需要重复规划。
 
-如果 Host 无法打开或确认原生 Plan 模式，Agent MUST NOT 假装已经切换；应记录 Host capability blocker，停止工作区变更，等待用户切换 Host 模式或使用已记录的等价 fallback。`aps status` 和 handoff 必须显示当前 Mode Gate；Codex Host 在该 Gate 未满足时不得自动启动普通会话。
+原生 Codex Plan 模式是可选的 Host 辅助能力，不是 Gate 或执行前提。若 Host 无法打开或确认该模式，Agent 不得声称已经切换；改为引用或补齐已接受的计划后继续执行，不阻塞执行。`aps status` 和 handoff 可以提示计划需求，但不得把它显示为 Mode Gate 或据此拒绝启动普通 Codex 会话。
 
-Research Stage 02–04 默认不强制 Plan 模式；只有研究范围、方法或证据成本复杂时，才先用 Plan 设计研究方案。实际研究仍必须在当前对话直接回答原始问题并输出 Research Brief。
+Research Stage 02–04 默认不要求正式计划；只有研究范围、方法或证据成本复杂时，才先用简短计划设计研究方案。实际研究仍必须在当前对话直接回答原始问题并输出 Research Brief。
 
 ### 0.3.2 Project Risk Profile / Workstream
 
@@ -149,7 +149,7 @@ Bootstrap MUST 让用户确认一个项目风险级别，并写入 `.ai/project-
 
 风险级别不是新的 Stage，也不能跳过任何当前 Stage。它只决定 Evidence、Release readiness 和审计深度；当数据敏感性、部署拓扑、Scope 或合规义务变化时，必须重新评估级别。大型项目可以并行执行不同 workstream 的 Task / Artifact，但全局 Cycle、Gate 和状态仍由 Coordinator 单写。
 
-所有项目 MUST 追加 `.ai/audit/transitions.jsonl`；`LARGE` / `REGULATED` 的记录和 Evidence 深度更高。每条记录至少包含 from/to state、原因、Actor 和 Evidence refs；记录必须单调追加，最后一条 `to_state` 必须与 `.ai/state.yaml` 一致。它补足当前状态快照不能证明历史流转的问题，但不替代 Git、Decision Log 或 Stage Artifact。
+所有项目 MUST 追加 `.ai/audit/transitions.jsonl`；`LARGE` / `REGULATED` 的记录和 Evidence 深度更高。每条记录至少包含 from/to state、原因、Actor 和 Evidence refs；记录必须单调追加，最后一条 `to_state` 必须与 `.ai/state.yaml` 一致。首次接管已有项目时，首条记录可用 `from_state: null`、`adoption: true` 和实际当前 Stage 建立可验证边界；它不声明缺失的前置 Stage 已通过，后续 Transition 仍必须满足正常的 Gate / COMPLETE 条件。它补足当前状态快照不能证明历史流转的问题，但不替代 Git、Decision Log 或 Stage Artifact。
 
 Transition 审计只能证明当前文件中的格式、顺序和状态链路可校验，不能单独证明历史行未被人为修改或 Evidence 真实有效；需要完整可信度时，仍须结合 Git 历史、仓库权限和人工审查。
 
@@ -162,7 +162,7 @@ Transition 审计只能证明当前文件中的格式、顺序和状态链路可
 未完成：还缺什么
 用户决策：需要确认什么
 确认影响：确认后进入哪一步
-下一阶段入口提醒：Transition Contract 指定的下一 Stage；若需要 Plan，先在 Host 打开 Plan 模式
+下一阶段入口提醒：Transition Contract 指定的下一 Stage；高影响 Stage 复用已接受计划或先写简短计划，原生 Plan 模式可选
 验证结果：哪些检查已经通过
 ```
 

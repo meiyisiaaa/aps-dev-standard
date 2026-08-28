@@ -283,12 +283,12 @@ def main() -> int:
         run_python("aps.py", "init", str(project), "--host", "generic", "--no-launch", "--no-git")
         run_python("aps.py", "doctor", str(project), "--host", "generic", "--standard-only")
         bootstrap_prompt = (project / ".ai" / "bootstrap" / "bootstrap-prompt.txt").read_text(encoding="utf-8")
-        required_prompt_markers = ("优点", "缺点", "适用条件", "主要风险", "直接回答原始研究问题", "分析关键证据", "用户需要 PRD 时", "prd-snapshot.md", "Stage User Brief", "不要每轮对话重复", "当前 Stage / Task", "下一阶段入口提醒", "不要求用户额外确认“Stage PASS”", "Impact Analysis", "定向验证", ".ai/templates/change-log.md")
+        required_prompt_markers = ("优点", "缺点", "适用条件", "主要风险", "直接回答原始研究问题", "分析关键证据", "用户需要 PRD 时", "prd-snapshot.md", "Stage User Brief", "不要每轮对话重复", "当前 Stage / Task", "下一阶段入口提醒", "不要求用户额外确认“Stage PASS”", "Impact Analysis", "定向验证", ".ai/templates/change-log.md", "adoption: true")
         if any(marker not in bootstrap_prompt for marker in required_prompt_markers):
             raise SystemExit("bootstrap prompt does not require decision and research analysis")
-        plan_prompt_markers = ("Codex", "Plan 模式", "Stage 01、05、06、07、08、09、10、13、14、15、16、20", "Host capability blocker")
-        if any(marker not in bootstrap_prompt for marker in plan_prompt_markers):
-            raise SystemExit("bootstrap prompt does not enforce Plan mode entry")
+        planning_prompt_markers = ("原生 Codex Plan 模式", "已接受的计划", "不阻塞执行", "Stage 01、05、06、07、08、09、10、13、14、15、16、20")
+        if any(marker not in bootstrap_prompt for marker in planning_prompt_markers):
+            raise SystemExit("bootstrap prompt does not enforce portable planning")
 
         before_repeat = snapshot_files(project)
         if not (project / ".ai" / "templates" / "prd-snapshot.md").is_file():
@@ -318,22 +318,67 @@ def main() -> int:
             (legacy / ".ai" / "templates" / "state.yaml").read_text(encoding="utf-8"),
             encoding="utf-8",
         )
-        legacy_resume = run_python_capture("aps.py", "resume", str(legacy), "--host", "codex")
-        if "尚未完成风险基线" not in legacy_resume or "will not auto-launch" not in legacy_resume:
+        legacy_resume = run_python_capture("aps.py", "resume", str(legacy), "--host", "codex", "--no-launch")
+        if "尚未完成风险基线" not in legacy_resume or "APS Agent Handoff" not in legacy_resume:
             raise SystemExit("legacy governed project did not enter safe governance bootstrap")
+
+        late_adoption = temp / "late-adoption-project"
+        run_python("aps.py", "init", str(late_adoption), "--host", "generic", "--no-launch", "--no-git")
+        for filename in ("decisions.md", "registry.yaml", "project-profile.json"):
+            (late_adoption / ".ai" / filename).write_text(
+                (late_adoption / ".ai" / "templates" / filename).read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+        late_state = late_adoption / ".ai" / "state.yaml"
+        late_state.write_text(
+            (late_adoption / ".ai" / "templates" / "state.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        late_state.write_text(
+            late_state.read_text(encoding="utf-8").replace("stage: 1", "stage: 15"),
+            encoding="utf-8",
+        )
+        adoption_record = json.loads(
+            (late_adoption / ".ai" / "templates" / "transition-record.json").read_text(encoding="utf-8")
+        )
+        adoption_record.update(
+            {
+                "event_id": "TRN-ADOPTION-001",
+                "recorded_at": "2026-08-27T00:00:01+00:00",
+                "reason": "Existing project adoption at verified Stage 15",
+                "to_state": {
+                    "cycle": "CYCLE-001",
+                    "stage": 15,
+                    "stage_type": "GATED",
+                    "stage_status": "ACTIVE",
+                    "gate_status": "PENDING",
+                },
+                "evidence_refs": ["approved-plan.md"],
+                "adoption": True,
+            }
+        )
+        late_audit = late_adoption / ".ai" / "audit" / "transitions.jsonl"
+        late_audit.parent.mkdir(parents=True, exist_ok=True)
+        late_audit.write_text(json.dumps(adoption_record, ensure_ascii=False) + "\n", encoding="utf-8")
+        run_python("aps.py", "doctor", str(late_adoption), "--host", "generic")
+        adoption_record.pop("adoption")
+        late_audit.write_text(json.dumps(adoption_record, ensure_ascii=False) + "\n", encoding="utf-8")
+        unmarked_adoption = run_python_expect_failure_capture("aps.py", "status", str(late_adoption))
+        if "adoption: true" not in unmarked_adoption:
+            raise SystemExit("late-stage adoption without an explicit marker was accepted")
 
         ordinary = temp / "ordinary-project"
         ordinary.mkdir()
         (ordinary / "app.txt").write_text("ordinary project\n", encoding="utf-8")
         ordinary_before = snapshot_files(ordinary)
         ordinary_upgrade = run_python_expect_failure_capture("aps.py", "upgrade", str(ordinary), "--host", "generic")
-        if "aps resume --no-launch" not in ordinary_upgrade or snapshot_files(ordinary) != ordinary_before:
+        if "运行 `aps resume` 接管已有项目" not in ordinary_upgrade or snapshot_files(ordinary) != ordinary_before:
             raise SystemExit("upgrade took over an ordinary ungoverned project")
 
         empty = temp / "empty-project"
         empty.mkdir()
         empty_upgrade = run_python_expect_failure_capture("aps.py", "upgrade", str(empty), "--host", "generic")
-        if "aps init --no-launch" not in empty_upgrade or snapshot_files(empty):
+        if "运行 `aps init` 初始化新项目" not in empty_upgrade or snapshot_files(empty):
             raise SystemExit("upgrade did not reject an empty directory")
 
         partial = temp / "partial-project"
@@ -446,8 +491,8 @@ def main() -> int:
             raise SystemExit("cancelled interactive rebaseline changed the project")
         run_python("aps.py", "rebaseline", str(project), "--host", "generic", "--no-launch", "--confirm")
         initial_status = run_python_capture("aps.py", "status", str(project))
-        if "Next action:" not in initial_status or "Mode gate: PLAN (required on Stage entry)" not in initial_status:
-            raise SystemExit("status did not provide the Stage Plan mode gate and next action")
+        if "Next action:" not in initial_status or "Planning: reuse an accepted plan" not in initial_status:
+            raise SystemExit("status did not provide the high-impact planning hint and next action")
         normal_state = state.read_text(encoding="utf-8")
         state.write_text(
             normal_state.replace("stage_status: ACTIVE", "stage_status: COMPLETE").replace("gate_status: PENDING", "gate_status: PASS"),
@@ -457,18 +502,18 @@ def main() -> int:
         complete_status = run_python_capture("aps.py", "status", str(project))
         complete_handoff = run_python_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
         for output in (complete_status, complete_handoff):
-            if "不需要额外确认当前 Stage PASS" not in output or "下一阶段入口提醒" not in output or "如果目标 Stage 需要 Plan 模式" not in output:
-                raise SystemExit("completed Stage did not provide direct-transition and next-Stage Plan guidance")
+            if "不需要额外确认当前 Stage PASS" not in output or "下一阶段入口提醒" not in output or "高影响 Stage" not in output:
+                raise SystemExit("completed Stage did not provide direct-transition and next-Stage planning guidance")
         state.write_text(normal_state, encoding="utf-8")
         write_transition_audit(project)
-        codex_resume = run_python_capture("aps.py", "resume", str(project), "--host", "codex")
-        if "Plan mode is required" not in codex_resume or "will not auto-launch" not in codex_resume:
-            raise SystemExit("Codex resume did not block a normal session for a Plan-required Stage")
+        codex_resume = run_python_capture_env({"PATH": ""}, "aps.py", "resume", str(project), "--host", "codex")
+        if "Codex CLI was not found" not in codex_resume or "will not auto-launch" in codex_resume:
+            raise SystemExit("Codex resume still blocked a normal session for a planning hint")
         state.unlink()
         missing_state_status = run_python_capture("aps.py", "status", str(project))
-        missing_state_resume = run_python_capture("aps.py", "resume", str(project), "--host", "codex")
-        if "not initialized" not in missing_state_status or "will not auto-launch" not in missing_state_resume:
-            raise SystemExit("missing state did not stay fail-closed for Codex resume")
+        missing_state_resume = run_python_capture_env({"PATH": ""}, "aps.py", "resume", str(project), "--host", "codex")
+        if "not initialized" not in missing_state_status or "Codex CLI was not found" not in missing_state_resume or "will not auto-launch" in missing_state_resume:
+            raise SystemExit("missing state did not provide an ordinary Codex resume path")
         state.write_text(normal_state, encoding="utf-8")
         invalid_states = (
             normal_state.replace("stage: 1", "stage: 99"),
@@ -504,16 +549,16 @@ def main() -> int:
         state.write_text(normal_state.replace("revision: 1", "revision: 3").replace("stage: 1", "stage: 17").replace("stage_type: GATED", "stage_type: EXECUTION_LOOP").replace("gate_status: PENDING", "gate_status: null"), encoding="utf-8")
         write_transition_audit(project)
         normal_status = run_python_capture("aps.py", "status", str(project))
-        if "Mode gate: NORMAL (Plan mode not required)" not in normal_status:
-            raise SystemExit("status incorrectly required Plan mode for an execution Stage")
+        if "Planning: no high-impact entry planning is required." not in normal_status:
+            raise SystemExit("status incorrectly required planning for an execution Stage")
         normal_readiness = json.loads((project / ".ai" / "templates" / "release-readiness.json").read_text(encoding="utf-8"))
         normal_readiness.update({"profile": "NORMAL", "status": "READY", "target_environment": "staging", "checks": {name: {"status": "PASS", "evidence_refs": [f"TEST-{name.upper()}"]} for name in ("lint", "build", "functional_qa", "rollback")}, "reviewed_at": "2026-08-27T00:00:04+00:00"})
         (project / ".ai" / "release-readiness.json").write_text(json.dumps(normal_readiness, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         state.write_text(normal_state.replace("revision: 1", "revision: 3").replace("stage: 1", "stage: 22").replace("stage_type: GATED", "stage_type: ROUTER").replace("gate_status: PENDING", "gate_status: null").replace("active_change_refs: []", "active_change_refs: [CHANGE-001]"), encoding="utf-8")
         write_transition_audit(project)
         change_status = run_python_capture("aps.py", "status", str(project))
-        if "Mode gate: PLAN (required on Stage entry)" not in change_status or "Active changes: CHANGE-001" not in change_status or "Impact Analysis" not in change_status:
-            raise SystemExit("status did not expose the active Change route")
+        if "Planning: reuse an accepted plan" not in change_status or "Active changes: CHANGE-001" not in change_status or "Impact Analysis" not in change_status:
+            raise SystemExit("status did not expose the active Change planning route")
         state.write_text(normal_state, encoding="utf-8")
         profile_bytes = profile.read_bytes()
         audit = project / ".ai" / "audit" / "transitions.jsonl"
@@ -572,9 +617,9 @@ def main() -> int:
             raise SystemExit("non-initial transition audit chain was accepted")
         profile.write_bytes(profile_bytes)
         write_transition_audit(project)
-        codex_handoff = run_python_capture("aps.py", "init", str(temp / "codex-mode-project"), "--host", "codex", "--no-git")
-        if "Plan mode is required" not in codex_handoff or "will not auto-launch" not in codex_handoff:
-            raise SystemExit("Codex handoff did not block a normal session for a Plan-required Stage")
+        codex_handoff = run_python_capture_env({"PATH": ""}, "aps.py", "init", str(temp / "codex-mode-project"), "--host", "codex", "--no-git")
+        if "Codex CLI was not found" not in codex_handoff or "可审查计划" not in codex_handoff or "will not auto-launch" in codex_handoff:
+            raise SystemExit("Codex init did not provide a normal session path with planning guidance")
         cycle_two_complete_wrong_stage = (
             normal_state.replace("revision: 1", "revision: 3")
             .replace("cycle: CYCLE-001", "cycle: CYCLE-002")

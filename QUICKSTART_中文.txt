@@ -12,8 +12,8 @@ git diff --cached --check
 git commit -m "Configure APS distribution"
 git push
 
-git tag v1.3.5
-git push origin v1.3.5
+git tag v1.3.6
+git push origin v1.3.6
 
 之后任何机器：
 
@@ -33,16 +33,16 @@ aps
 第一次使用：
 
 新项目运行：
-aps init --no-launch
+aps init
 
 已有项目运行：
-aps resume --no-launch
+aps resume
 
-把 CLI 输出的完整 APS Agent Handoff 代码块发送到当前 Agent Host。Bootstrap 完成后运行：
+默认由 APS 恢复或启动 Host；需要只输出可复制的 APS Agent Handoff 时再加 `--no-launch`。Bootstrap 完成后运行：
 aps doctor
 aps status
 
-Bootstrap 时必须让用户确认项目风险级别并写入 .ai/project-profile.json：NORMAL（普通）、LARGE（大型）或 REGULATED（强合规）。所有项目维护 .ai/audit/transitions.jsonl；大型项目按模块或工作流填写 workstreams；Stage 20 Release 前按级别补齐 .ai/release-readiness.json。风险级别不增加 Stage。普通 Stage 满足 Artifact、验收、Verification 和 blocker 条件后，可直接记录 COMPLETE + PASS 并进入 Transition Contract 指定的下一 Stage，不要求用户额外确认“Stage PASS”；用户决策、重大范围 / 方向变化、HOLD / STOP 和 Release approval 仍需确认。
+Bootstrap 时必须让用户确认项目风险级别并写入 .ai/project-profile.json：NORMAL（普通）、LARGE（大型）或 REGULATED（强合规）。所有项目维护 .ai/audit/transitions.jsonl；大型项目按模块或工作流填写 workstreams；Stage 20 Release 前按级别补齐 .ai/release-readiness.json。风险级别不增加 Stage。首次接管已有项目时，首条 Transition 可使用 `from_state: null`、`adoption: true`、实际当前 Stage 和 Evidence refs 建立基线；不伪造缺失前置 Stage PASS，也不为此创建 Rebaseline Cycle。普通 Stage 满足 Artifact、验收、Verification 和 blocker 条件后，可直接记录 COMPLETE + PASS 并进入 Transition Contract 指定的下一 Stage，不要求用户额外确认“Stage PASS”；用户决策、重大范围 / 方向变化、HOLD / STOP 和 Release approval 仍需确认。
 
 遇到阻塞后的恢复：
 1. 先运行 aps status，只执行输出的唯一 NEXT。
@@ -53,7 +53,7 @@ Bootstrap 时必须让用户确认项目风险级别并写入 .ai/project-profil
 6. 待决策时运行 aps decision show/list，在当前对话完成决策卡分析，再运行 aps decision answer 或 aps decision cancel。
 7. 风险基线、Transition 审计或 Release readiness 损坏时，APS 会拒绝继续；按 status / doctor 输出的唯一 NEXT 修复，不要猜测为 NORMAL 或手动把 Gate 改成 PASS。
 
-交接时只携带当前 Stage / Task 和直接引用；Stage User Brief 只在完成、阻塞、暂停或切换对话时输出，不要每轮重复。完成结果必须提醒下一 Stage，以及目标 Stage 是否需要先打开 Plan 模式。大型项目可以并行 Task，但全局状态、Gate、Decision 和 Registry 仍由 Coordinator 统一维护。
+交接时只携带当前 Stage / Task 和直接引用；Stage User Brief 只在完成、阻塞、暂停或切换对话时输出，不要每轮重复。完成结果必须提醒下一 Stage，以及高影响入口是否应复用已接受计划或先写简短计划。大型项目可以并行 Task，但全局状态、Gate、Decision 和 Registry 仍由 Coordinator 统一维护。
 
 增量变更：已确认 Scope / Requirements 内且不改变已确认契约的小 Task 留在当前 Stage，只更新差异并做定向验证；新增行为、修改已通过 Gate 的内容或改变技术 / 安全 / Release 约束时进入 Stage 22，使用 `.ai/templates/change-log.md` 做 Impact Analysis，返回最早受影响 Stage。保留未受影响的有效 Artifact；依赖不清楚时扩大验证，不能用小改动绕过 Gate。
 
@@ -84,7 +84,7 @@ aps decision cancel DEC-001 --reason "范围已调整"
 
 切换对话后运行 `aps status` 或 `aps resume --no-launch`，查看当前 Cycle、阻塞项、待决策和下一步。
 
-以下 Stage 进入时必须先打开 Codex Plan 模式：01、05、06、07、08、09、10、13、14、15、16、20；Stage 22 有 Active Change 时也必须打开。计划确认后可切回普通模式执行。`aps status` 会显示 `Mode gate`；Codex Host 不会在未满足要求时自动启动普通会话。
+以下高影响 Stage 进入时必须先有一份可审查且已接受的计划：01、05、06、07、08、09、10、13、14、15、16、20；Stage 22 有 Active Change 时也相同。当前对话中已接受的计划即可，不需要重复写成第二份文件。原生 Codex Plan 模式可选，不是 Gate；Host 无法打开该模式时，引用或补齐计划后继续执行，`aps status` 只给出 Planning 提示，Codex Host 可以启动普通会话。
 
 保护规则：
 - 不要重复执行 init；已有 APS 文件时会拒绝。

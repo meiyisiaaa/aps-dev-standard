@@ -1,8 +1,8 @@
 # AI 项目 Artifact & State 标准（Project Artifact & State Standard）
 
-**Standard Version:** `1.3.5`<br>
+**Standard Version:** `1.3.6`<br>
 **Status:** `ACTIVE`  
-**Companion Lifecycle Standard:** `1.3.5`
+**Companion Lifecycle Standard:** `1.3.6`
 
 > 本标准约束 AI 在项目中创建、读取、更新、验证、同步、迁移和归档 Artifact 与项目状态。  
 > `.ai/standards/lifecycle.md`定义生命周期与执行 Contract；本标准定义项目状态如何持久化以及哪个 Source of Truth 具有权威性。
@@ -469,7 +469,7 @@ Reference UI 确认
 
 ```yaml
 schema_version: 1
-standard_version: "1.3.5"
+standard_version: "1.3.6"
 revision: 1
 
 cycle: CYCLE-001
@@ -535,6 +535,8 @@ Release / Cycle Review
 ```
 
 每次 Stage / Gate / Cycle 变更都必须追加记录；Stage 变更离开 GATED Stage 前必须有 `COMPLETE + PASS`。普通 Stage 满足 Artifact、Verification 和 blocker 条件后可直接进入 Transition Contract 指定的下一 Stage，不要求用户额外确认“Stage PASS”。APS 会拒绝格式错误、链断裂或最后状态与 `state.yaml` 不一致的审计链。审计记录不能替代 Stage Artifact、Decision Log、Git 或需要用户决策 / Release approval 的 Gate。
+
+首次接管已有项目时，首条记录可以以真实当前 Stage 为 `to_state`，同时使用 `from_state: null`、`adoption: true` 和可核验的 `evidence_refs`。这只记录“APS 从何处开始观察”的边界，不得补写或伪造缺失 Stage 的 PASS；`adoption` 只能用于首条记录，之后仍按正常 COMPLETE / Gate PASS 规则推进。
 
 # 6. 阶段 Artifact 布局与自动创建
 

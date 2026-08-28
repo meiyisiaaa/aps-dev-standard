@@ -16,7 +16,7 @@ from .installer import BEGIN_AGENTS, BEGIN_GITIGNORE, END_AGENTS, END_GITIGNORE,
 from .research import render_brief
 
 HOSTS = ("codex", "generic")
-PLAN_MODE_REQUIRED_STAGES = frozenset({1, 5, 6, 7, 8, 9, 10, 13, 14, 15, 16, 20})
+PLANNING_RECOMMENDED_STAGES = frozenset({1, 5, 6, 7, 8, 9, 10, 13, 14, 15, 16, 20})
 MANAGED_PATH_PREFIX = ".ai/"
 
 
@@ -43,12 +43,12 @@ def configure_stdio() -> None:
             reconfigure(encoding="utf-8", errors="replace")
 
 
-def stage_requires_plan_mode(state: dict) -> bool:
-    """Return whether the active Stage requires a Plan-mode entry handoff."""
+def stage_needs_planning_hint(state: dict) -> bool:
+    """Return whether the active Stage benefits from an accepted entry plan."""
     if state.get("stage_status") == "COMPLETE":
         return False
     stage = state.get("stage")
-    if isinstance(stage, int) and stage in PLAN_MODE_REQUIRED_STAGES:
+    if isinstance(stage, int) and stage in PLANNING_RECOMMENDED_STAGES:
         return True
     return stage == 22 and bool(state.get("active_change_refs"))
 
@@ -379,7 +379,7 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
         return [
             "Runtime state: not initialized（运行状态尚未初始化）",
             "原因：Bootstrap 尚未写入 `.ai/state.yaml`，当前不能推断 active Stage。",
-            "Next action: 在 Agent Host 中完成 Bootstrap；Codex 不会自动启动普通会话。",
+            "Next action: 在 Agent Host 中完成 Bootstrap。",
         ]
     try:
         state = load_runtime_state(root)
@@ -406,11 +406,10 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
                 lines.append(f"Risk profile: invalid（{profile_error}）")
             else:
                 lines.append("Risk profile: not initialized（风险基线尚未初始化）")
-    if stage_requires_plan_mode(state):
-        lines.append("Mode gate: PLAN (required on Stage entry)（进入阶段前必须打开 Plan 模式）")
-        lines.append("Mode action: 先在当前 Host 打开原生 Plan 模式并确认计划，再切换普通模式执行文件修改。")
+    if stage_needs_planning_hint(state):
+        lines.append("Planning: reuse an accepted plan or make a concise plan before material changes; native Plan mode is optional.")
     else:
-        lines.append("Mode gate: NORMAL (Plan mode not required)（当前阶段无需 Plan 模式）")
+        lines.append("Planning: no high-impact entry planning is required.")
     gate = state.get("gate_status")
     if gate not in (None, "null"):
         lines.append(f"Gate: {gate}")
@@ -469,8 +468,8 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
     lines.append(f"Next action: {rendered}")
     if stage_ready:
         lines.append(
-            "下一阶段入口提醒：读取 Transition Contract；如果目标 Stage 需要 Plan 模式，"
-            "先在当前 Host 打开 Plan，再开始工作。普通 Stage PASS 不需要额外用户确认。"
+            "下一阶段入口提醒：读取 Transition Contract；目标为高影响 Stage 时，复用已接受计划或先写简短计划"
+            "（原生 Plan 模式可选）。普通 Stage PASS 不需要额外用户确认。"
         )
     return lines
 
@@ -480,7 +479,7 @@ def handoff_prompt(mode: str, root: Path | None = None) -> str:
         prompt = (
             "请读取 `.ai/bootstrap/bootstrap-prompt.txt` 并执行。"
             "这是一个新项目：初始化运行治理状态并从 Stage 01 开始；"
-            "任何文件修改前先切换到 Codex Plan 模式；普通 Stage 满足 Artifact 和 Validation 后直接推进，"
+            "开始实质性工作前先复用已有或形成可审查计划（原生 Plan 模式可选）；普通 Stage 满足 Artifact 和 Validation 后直接推进，"
             "仅在需要用户决策的 Gate 或 Release 边界停止。"
         )
     elif mode == "resume":
@@ -492,7 +491,7 @@ def handoff_prompt(mode: str, root: Path | None = None) -> str:
         prompt = (
             "请先读取并执行 `.ai/bootstrap/bootstrap-prompt.txt`，"
             "再读取并执行 `.ai/bootstrap/rebaseline-existing-project.txt`。"
-            "创建新的 Rebaseline Cycle，并在 Codex Plan 模式下从 Stage 01 开始；不要在一次对话中跑完整生命周期。"
+            "创建新的 Rebaseline Cycle，并在 Stage 01 开始前形成可审查计划（原生 Plan 模式可选）；不要在一次对话中跑完整生命周期。"
         )
     else:
         raise ValueError(mode)
@@ -503,14 +502,7 @@ def handoff_prompt(mode: str, root: Path | None = None) -> str:
     return prompt
 
 
-def current_stage_requires_plan_mode(root: Path) -> bool:
-    state, error = runtime_state(root)
-    if error:
-        raise DecisionError(error)
-    return True if state is None else stage_requires_plan_mode(state)
-
-
-def launch_host(root: Path, host: str, prompt: str, no_launch: bool, require_plan_mode: bool = False) -> int:
+def launch_host(root: Path, host: str, prompt: str, no_launch: bool) -> int:
     def print_copyable_handoff(title: str) -> None:
         print(f"\n{title}")
         print("请复制下面整个代码块发送到 Agent Host；APS 不写入项目文件，也不使用剪贴板：\n")
@@ -518,13 +510,6 @@ def launch_host(root: Path, host: str, prompt: str, no_launch: bool, require_pla
         print(prompt)
         print("```")
 
-    if require_plan_mode and host == "codex" and not no_launch:
-        print("\nWARN  Codex Plan mode is required before this Stage handoff（当前阶段必须先打开 Plan 模式）。")
-        print("APS will not auto-launch a normal Codex session（不会自动启动普通 Codex 会话）。")
-        print("NEXT  Host 操作：打开项目，选择 Plan mode，然后发送下面的完整代码块。")
-        print_copyable_handoff("=== APS Agent Handoff ===")
-        print("=== End APS Agent Handoff ===")
-        return 0
     if no_launch or host != "codex":
         print_copyable_handoff("=== APS Agent Handoff ===")
         print("=== End APS Agent Handoff ===")
@@ -533,7 +518,7 @@ def launch_host(root: Path, host: str, prompt: str, no_launch: bool, require_pla
     codex = shutil.which("codex")
     if not codex:
         print("\nWARN  Codex CLI was not found on PATH（未找到 Codex CLI）。")
-        print("NEXT  Host 操作：打开项目，选择对应模式，然后发送下面的完整代码块。")
+        print("NEXT  Host 操作：打开项目并发送下面的完整代码块。")
         print_copyable_handoff("=== APS Agent Handoff ===")
         print("=== End APS Agent Handoff ===")
         return 0
@@ -597,16 +582,16 @@ def run_doctor(root: Path, host: str, strict_runtime: bool = True) -> int:
         if manifest_path.exists() or has_aps_artifacts(root):
             next_action = "运行 `aps upgrade` 修复半安装 Standard，再重新运行 `aps doctor`。"
         elif project_has_content(root):
-            next_action = "运行 `aps resume --no-launch` 接管已有项目，再重新运行 `aps doctor`。"
+            next_action = "运行 `aps resume` 接管已有项目，再重新运行 `aps doctor`。"
         else:
-            next_action = "运行 `aps init --no-launch` 初始化新项目，再重新运行 `aps doctor`。"
+            next_action = "运行 `aps init` 初始化新项目，再重新运行 `aps doctor`。"
         recovery("项目中缺少 `.ai/tools/standards-lint.py`，无法开始体检。", next_action)
         return 2
     state_path = root / ".ai" / "state.yaml"
     state_present = state_path.exists() or state_path.is_symlink()
     if not state_present and strict_runtime:
         print("FAIL  Runtime state 尚未初始化。")
-        recovery("Bootstrap 尚未写入 `.ai/state.yaml`，无法检查 active Stage。", "运行 `aps resume --no-launch`，完成 Bootstrap 后再运行 `aps doctor`。")
+        recovery("Bootstrap 尚未写入 `.ai/state.yaml`，无法检查 active Stage。", "运行 `aps resume`，完成 Bootstrap 后再运行 `aps doctor`。")
         return 2
     if state_present and not state_path.is_file():
         print("FAIL  Runtime state 路径无效：`.ai/state.yaml` 必须是普通文件。")
@@ -688,7 +673,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     root.mkdir(parents=True, exist_ok=True)
     ensure_git(root, enabled=not args.no_git)
     install(root, args.host, args.force_managed)
-    rc = launch_host(root, args.host, handoff_prompt("init", root), args.no_launch, require_plan_mode=True)
+    rc = launch_host(root, args.host, handoff_prompt("init", root), args.no_launch)
     if rc != 0:
         return rc
     if args.no_launch:
@@ -779,13 +764,12 @@ def cmd_resume(args: argparse.Namespace) -> int:
             audit_path = root / ".ai" / "audit" / "transitions.jsonl"
             if not (profile_path.exists() or profile_path.is_symlink()) and not (audit_path.exists() or audit_path.is_symlink()):
                 print("WARN  当前项目尚未完成风险基线和 Transition Bootstrap。")
-                print("NEXT  先在 Agent Host 完成 Bootstrap；Codex 不会自动启动普通会话。")
+                print("NEXT  先在 Agent Host 完成 Bootstrap。")
                 return launch_host(
                     root,
                     args.host,
                     handoff_prompt("resume", root),
                     args.no_launch,
-                    require_plan_mode=True,
                 )
             _, governance_problems = runtime_governance_problems(root, state)
             if governance_problems:
@@ -796,7 +780,6 @@ def cmd_resume(args: argparse.Namespace) -> int:
             args.host,
             handoff_prompt("resume", root),
             args.no_launch,
-            require_plan_mode=current_stage_requires_plan_mode(root),
         )
     if has_aps_artifacts(root):
         print("REFUSE  检测到没有有效 manifest 的不完整 APS 安装。")
@@ -808,7 +791,7 @@ def cmd_resume(args: argparse.Namespace) -> int:
         return 2
     print("OK    正在接管已有项目；完成本次安装后，后续 `aps resume` 只恢复状态，不修改项目。")
     install(root, args.host, force_managed=False)
-    return launch_host(root, args.host, handoff_prompt("resume", root), args.no_launch, require_plan_mode=True)
+    return launch_host(root, args.host, handoff_prompt("resume", root), args.no_launch)
 
 
 def cmd_rebaseline(args: argparse.Namespace) -> int:
@@ -890,7 +873,7 @@ def cmd_rebaseline(args: argparse.Namespace) -> int:
         print(f"REFUSE  Standard 托管文件已被本地修改：{modified[0]}")
         recovery("rebaseline 必须建立在 manifest 对应的内置 Standard 文件上。", "运行 `aps upgrade` 保留新版本到 `.ai/incoming/<version>/`，人工合并后再运行 `aps rebaseline --confirm`。")
         return 2
-    return launch_host(root, args.host, handoff_prompt("rebaseline", root), args.no_launch, require_plan_mode=True)
+    return launch_host(root, args.host, handoff_prompt("rebaseline", root), args.no_launch)
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -920,10 +903,10 @@ def cmd_upgrade(args: argparse.Namespace) -> int:
     if not manifest_path.exists() and not has_aps_artifacts(root):
         if project_has_content(root):
             print("REFUSE  当前项目尚未受 APS 管理，upgrade 不会越权接管。")
-            recovery("普通旧项目必须先建立接管边界和 Bootstrap 路径。", "运行 `aps resume --no-launch` 接管已有项目。")
+            recovery("普通旧项目必须先建立接管边界和 Bootstrap 路径。", "运行 `aps resume` 接管已有项目。")
         else:
             print("REFUSE  当前目录为空，upgrade 不负责初始化新项目。")
-            recovery("空目录没有可升级的 APS 安装。", "运行 `aps init --no-launch` 初始化新项目。")
+            recovery("空目录没有可升级的 APS 安装。", "运行 `aps init` 初始化新项目。")
         return 2
     if manifest_problems_found or (not manifest_path.exists() and has_aps_artifacts(root)):
         print("WARN  检测到 APS 半安装或损坏残留，upgrade 将只修复可识别的 Standard 文件。")
@@ -972,9 +955,9 @@ def cmd_status(args: argparse.Namespace) -> int:
         print("Governed: no（是否受治理）")
         print("Runtime state: not initialized")
         if project_has_content(root):
-            print("NEXT  运行 `aps resume --no-launch` 接管已有项目。")
+            print("NEXT  运行 `aps resume` 接管已有项目。")
         else:
-            print("NEXT  运行 `aps init --no-launch` 初始化新项目。")
+            print("NEXT  运行 `aps init` 初始化新项目。")
         return 0
 
     print("Governed: yes（是否受治理）")
@@ -1044,7 +1027,7 @@ def cmd_status(args: argparse.Namespace) -> int:
                 action="在 Host 中按 `.ai/templates/project-profile.json` 修复 `.ai/project-profile.json`，再运行 `aps doctor --standard-only`。",
             )
             return 2
-        print("NEXT  运行 `aps resume --no-launch`，让 Agent Host 完成 Bootstrap。")
+        print("NEXT  运行 `aps resume`，让 Agent Host 完成 Bootstrap。")
         return 0
     runtime, state_error = runtime_state(root)
     if state_error:
@@ -1149,9 +1132,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="APS（AI Project Standard）命令行工具：安装、接管、恢复和检查项目治理状态。",
         epilog=(
             "典型路径：\n"
-            "  新项目：aps init --no-launch → 在 Host 执行 handoff → aps doctor\n"
-            "  旧项目：aps resume --no-launch → 完成 Bootstrap → aps status\n"
-            "  遇到阻塞：aps status → 按 NEXT 操作；需要恢复时运行 aps resume --no-launch\n"
+            "  新项目：aps init → 完成 Bootstrap → aps doctor\n"
+            "  旧项目：aps resume → 完成 Bootstrap → aps status\n"
+            "  只想复制 handoff：在 init / resume 后加 --no-launch\n"
+            "  遇到阻塞：aps status → 按 NEXT 操作；需要恢复时运行 aps resume\n"
             "  决策：aps decision request <REQUEST-FILE> → 当前对话分析 → aps decision answer DEC-001 A\n"
             "  研究：aps research brief <ARTIFACT>；完整报告仍保留在 Stage Artifact。\n"
             "  风险：Bootstrap 确认 NORMAL/LARGE/REGULATED 并写入 .ai/project-profile.json。\n"

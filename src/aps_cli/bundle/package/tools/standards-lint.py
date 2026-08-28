@@ -121,7 +121,7 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
     required_lifecycle_sections = [
         "## 0.7 Context Loading & Budget",
         "## 0.13 Gate State Machine",
-        "### 0.3.1 Stage Entry / Host Plan Mode",
+        "### 0.3.1 Stage Entry / Planning",
         "### 0.3.2 Project Risk Profile / Workstream",
         "### 0.3.3 Proportional Change / Incremental Validation",
         "# 31. Agent Runtime Standard",
@@ -242,16 +242,17 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
         report.pass_("research results require conversational delivery")
     else:
         report.error("research results are not required in the current conversation")
-    plan_mode_markers = (
+    planning_markers = (
         "Stage 01、05、06、07、08、09、10、13、14、15、16、20",
         "Stage 22",
+        "已接受的计划",
         "原生 Codex Plan 模式",
-        "Host capability blocker",
+        "不阻塞执行",
     )
-    if all(marker in life + "\n" + boot for marker in plan_mode_markers):
-        report.pass_("high-impact Stage entry requires Codex Plan mode")
+    if all(marker in life + "\n" + boot for marker in planning_markers):
+        report.pass_("high-impact Stage entry has a portable planning policy")
     else:
-        report.error("Stage Plan mode entry policy is incomplete")
+        report.error("Stage entry planning policy is incomplete")
     stage_brief_markers = ("Stage User Brief", "目标", "输入", "已完成", "未完成", "用户决策", "确认影响", "下一阶段入口提醒", "验证结果")
     artifact_contract_markers = ("Artifact Contract", "Purpose", "Inputs", "Outputs", "Acceptance Criteria", "Current Status", "Blocking Decisions", "Next Stage")
     if all(marker in life + "\n" + art + "\n" + boot for marker in stage_brief_markers):

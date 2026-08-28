@@ -19,8 +19,8 @@ git push
 Then tag a release:
 
 ```bash
-git tag v1.3.5
-git push origin v1.3.5
+git tag v1.3.6
+git push origin v1.3.6
 ```
 
 When changing files under `src/aps_cli/bundle/package/`, refresh their manifest checksums before committing:
@@ -29,7 +29,7 @@ When changing files under `src/aps_cli/bundle/package/`, refresh their manifest 
 python scripts/build_release.py --refresh-manifest
 ```
 
-GitHub Actions builds `APS_CLI_1.3.5.zip` and its SHA-256 file and attaches them to the Release.
+GitHub Actions builds `APS_CLI_1.3.6.zip` and its SHA-256 file and attaches them to the Release.
 The online installers verify that SHA-256 file and fail closed when no verified Release asset is available.
 
 ## One-line install
@@ -58,10 +58,10 @@ aps
 新项目：
 
 ```bash
-aps init --no-launch
+aps init
 ```
 
-把 CLI 输出的完整 `APS Agent Handoff` 代码块发送到当前 Agent Host；Bootstrap 完成后运行：
+默认由 APS 恢复或启动 Host；只想复制 `APS Agent Handoff` 时加 `--no-launch`。Bootstrap 完成后运行：
 
 ```bash
 aps doctor
@@ -73,10 +73,12 @@ Bootstrap 时必须让用户确认项目风险级别并写入 `.ai/project-profi
 已有项目：
 
 ```bash
-aps resume --no-launch
+aps resume
 ```
 
-`resume` 会按实际项目状态输出 handoff；在有效 manifest 存在后，重复 `resume` 只恢复状态，不升级或修改项目。普通已有项目不要用 `upgrade` 越权接管；半安装或损坏的 APS 残留才使用 `upgrade` 修复；空目录使用 `init`。
+`resume` 会按实际项目状态恢复或启动 Host；需要只输出可复制 handoff 时加 `--no-launch`。在有效 manifest 存在后，重复 `resume` 只恢复状态，不升级或修改项目。普通已有项目不要用 `upgrade` 越权接管；半安装或损坏的 APS 残留才使用 `upgrade` 修复；空目录使用 `init`。
+
+首次接管已有项目时，以真实当前状态初始化 `CYCLE-001`：首条 Transition 可使用 `from_state: null`、`adoption: true` 和实际 Evidence refs 直接落在当前 Stage。不要补写虚假的 Stage 01–14 PASS，也不要仅为此创建 Rebaseline Cycle；后续 Transition 仍必须满足正常的 `COMPLETE` / Gate `PASS` 约束。
 
 遇到阻塞时先运行 `aps status`，只执行输出的唯一 `NEXT`。运行状态缺失或损坏时，先运行 `aps doctor --standard-only` 获取第一项问题；`doctor` 不会替你猜测或改写坏状态，需人工修复 `.ai/state.yaml` 后再运行 `aps resume --no-launch`。Standard 版本不匹配或出现托管文件冲突时，先审查 `.ai/incoming/<version>/`，人工合并后再运行 `aps upgrade`；APS 不会自动合并本地修改。除非明确接受“备份后覆盖”，不要使用 `--force-managed`。
 
@@ -130,7 +132,7 @@ After switching conversations, run `aps status` or `aps resume --no-launch` to p
 
 Before ending, pausing, blocking, or handing off any Stage, output a one-page Stage User Brief in the current conversation with: goal, inputs, completed work, incomplete work, user decisions, confirmation impact, next-stage entry reminder, and verification results. Once an ordinary Stage satisfies its Artifact, acceptance, Verification, and blocker conditions, it may record `COMPLETE + PASS` and follow the Transition Contract without asking the user to confirm "Stage PASS" again. The Stage Artifact must also contain or reference an Artifact Contract with its purpose, inputs, outputs, acceptance criteria, current status, blocking decisions, and next stage. A written document alone does not mean the Stage is complete.
 
-交接优化：Stage User Brief 只在阶段完成、阻塞、暂停或切换对话时输出，不要求每轮重复；完成结果必须提醒 Transition Contract 指定的下一 Stage，以及该 Stage 是否需要先打开 Plan 模式；handoff 只携带当前 Stage / Task 和直接引用，旧 Cycle 与完整 Standard 按需读取。大型项目的并行 Task 只交接变更文件、接口影响、依赖状态和 Evidence refs，由 Coordinator 统一更新全局治理状态。
+交接优化：Stage User Brief 只在阶段完成、阻塞、暂停或切换对话时输出，不要求每轮重复；完成结果必须提醒 Transition Contract 指定的下一 Stage，以及高影响入口是否应复用已接受计划或先写简短计划；handoff 只携带当前 Stage / Task 和直接引用，旧 Cycle 与完整 Standard 按需读取。大型项目的并行 Task 只交接变更文件、接口影响、依赖状态和 Evidence refs，由 Coordinator 统一更新全局治理状态。
 
 增量变更：仍在已确认 Scope / Requirements 内、且不改变已确认契约的局部 Task 留在当前 Stage，只做差异更新和定向验证；新增行为、修改已通过 Gate 的内容或改变技术 / 安全 / Release 约束时，进入 Stage 22，使用 `.ai/templates/change-log.md` 做 Impact Analysis，路由到最早受影响 Stage。保留未受影响的有效 Artifact；依赖不清楚时扩大验证范围，不能用“只改一个文件”跳过必需 Gate 或 Release 检查。
 
@@ -138,7 +140,7 @@ Before ending, pausing, blocking, or handing off any Stage, output a one-page St
 
 PRD 路径：APS 不增加独立 PRD Stage。Stage 08 `08_REQUIREMENTS.md` 仍是需求核心来源；需要单页产品视图时，可将 `.ai/templates/prd-snapshot.md` 复制到当前 Cycle 的 `08-requirements/08_PRD_SNAPSHOT.md`，并只引用 Stage 05–09 的有效 Artifact 与 `DEC-*`。它是可选派生汇总，不是第二个 Source of Truth，也不新增 Gate。
 
-High-impact Stage entry requires Codex Plan mode before workspace changes: Stage 01, 05, 06, 07, 08, 09, 10, 13, 14, 15, 16, and 20. Stage 22 requires it when an Active Change exists. After the plan is accepted, switch to normal mode for execution. If `aps` is asked to launch Codex for one of these entries, it deliberately does not start a normal session; open the project in Codex, select Plan mode, and send the printed handoff.
+High-impact Stage entry needs a concise accepted plan before material workspace changes: Stage 01, 05, 06, 07, 08, 09, 10, 13, 14, 15, 16, and 20; Stage 22 needs the same when an Active Change exists. An explicit plan accepted in the current conversation is sufficient. Native Codex Plan mode is optional, not a Gate: if unavailable, record or reference the accepted plan and continue; `aps` may launch a normal Codex session.
 
 ## Temporary use before repository configuration
 
