@@ -1097,7 +1097,12 @@ critical_skills: {}
             pass
         else:
             raise SystemExit("ZIP path traversal was accepted")
-        if "Test-SafeZip" not in (ROOT / "install.ps1").read_text(encoding="utf-8") or "extractall" in (ROOT / "install.sh").read_text(encoding="utf-8"):
+        powershell_installer = (ROOT / "install.ps1").read_text(encoding="utf-8")
+        if (
+            "Test-SafeZip" not in powershell_installer
+            or "BitConverter]::ToUInt32" not in powershell_installer
+            or "extractall" in (ROOT / "install.sh").read_text(encoding="utf-8")
+        ):
             raise SystemExit("online installer ZIP safety boundary is missing")
 
         symlink_bundle = temp / "symlink-bundle"

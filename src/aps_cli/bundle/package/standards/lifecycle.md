@@ -1,8 +1,8 @@
 # AI 产品开发生命周期标准（Full-Cycle Engineering Standard）
 
-**Standard Version:** `1.3.8`<br>
+**Standard Version:** `1.3.9`<br>
 **Status:** `ACTIVE`  
-**Companion Artifact Standard:** `1.3.8`
+**Companion Artifact Standard:** `1.3.9`
 
 > 本标准定义 AI 参与产品开发时的统一生命周期、Stage Contract、Gate、Agent Runtime、Skill、验证、追踪和变更参考。
 > 23 个 Stage/Gate 用于导航和状态记录；普通流程条件不自动成为 CLI 阻塞。不得用未确认假设替代重大决策，不得把聊天内容视为已经落盘的项目状态。

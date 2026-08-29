@@ -79,7 +79,11 @@ function Test-SafeZip {
             if (-not $seen.Add($key)) {
                 throw "ZIP 包含重复或大小写碰撞条目：$name"
             }
-            $unixType = (([uint32]$entry.ExternalAttributes -shr 16) -band 0xF000)
+            $externalAttributes = [BitConverter]::ToUInt32(
+                [BitConverter]::GetBytes([int32]$entry.ExternalAttributes),
+                0
+            )
+            $unixType = (($externalAttributes -shr 16) -band 0xF000)
             if ($unixType -eq 0xA000) {
                 throw "ZIP 包含链接条目：$name"
             }
