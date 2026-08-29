@@ -229,9 +229,11 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
         "Task Type",
         "Production Change Expected",
         "不得按任务列表自动挑选",
+        "具体产品",
+        "治理文件替代开发",
     )
     if all(marker in life + "\n" + art + "\n" + boot for marker in task_routing_markers):
-        report.pass_("task routing requires explicit authorization and a development kind")
+        report.pass_("task routing separates explicit task authorization from direct product work")
     else:
         report.error("task routing guard is incomplete")
 

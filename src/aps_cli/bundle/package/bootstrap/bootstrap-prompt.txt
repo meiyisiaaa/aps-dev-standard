@@ -12,15 +12,16 @@ APS CLI 边界：`resume` 负责接管或恢复，`upgrade` 只更新 Standard�
 
 治理原则：
 - 23 个 Stage/Gate 用于导航和状态记录；普通流程条件、计划、风险档案、Registry、Transition audit、Release readiness、PRD Snapshot、Research Brief、Stage User Brief、Artifact Contract 和 Change 记录按实际需要使用，缺失或过期只提示。
-- 不自动猜测 `NORMAL`，不自动通过 Gate，不自动覆盖用户文件。普通任务可以继续；只有待处理 `user_decision`、明确 `HOLD` / `STOP`、安全/完整性错误，或 `EXECUTION_LOOP` 没有 active task 时暂停。
+- 不自动猜测 `NORMAL`，不自动通过 Gate，不自动覆盖用户文件。具体产品请求可以直接实现；只有待处理 `user_decision`、明确 `HOLD` / `STOP`、安全/完整性错误，或 `EXECUTION_LOOP` 没有 active task 且没有具体产品请求时暂停。
 - `status`、`doctor` 和 handoff 的 `NEXT` 是可选建议，不要求唯一或必须执行。
 - 全局治理写入仍遵守 Single Writer、revision、锁和 compare-before-write；实际需要保留的 Artifact、状态变更和验证证据必须落盘。
 
 Task routing guard（任务路由硬规则）：
+- 用户明确提出产品 bug、功能或可验收行为时，该请求本身就是实现授权，可以直接开发；不得先改写成任务清单或治理 Artifact。
 - “继续”只表示继续当前已明确授权的任务；它不授权新任务，也不允许按任务列表顺序、优先级、依赖或“下一个”自动挑选任务。
-- 在 `EXECUTION_LOOP` 中，只有用户明确给出 `TASK-*` 后，才能在 `.ai/state.yaml` 设置 `active_task_ref` 和 `active_task_kind`。没有 active task 时必须停下并请求明确任务，不得按任务列表自动挑选，也不得先写审计、架构或其他替代物。
-- 只有 `active_task_kind=implementation` 且任务明确预计修改生产代码或测试，才可称为“进入开发”。`verification`、`governance`、`external` 任务必须明确标注，不得冒充开发。
-- 待决策只暂停受影响的业务路径，但不得用无关任务填充空档；当前没有 READY 的 implementation 任务时，直接报告并请求一个具体开发目标。
+- 在 `EXECUTION_LOOP` 中，只有用户明确给出 `TASK-*` 后，才能在 `.ai/state.yaml` 设置 `active_task_ref` 和 `active_task_kind`。没有 active task 且没有具体产品请求时必须停下并请求目标，不得按任务列表自动挑选，也不得先写审计、架构或其他替代物。
+- 只有明确授权的 `implementation` 任务，或明确要求生产代码变更的具体产品请求，才可称为“进入开发”。`verification`、`governance`、`external` 任务必须明确标注，不得冒充开发。
+- 待决策只暂停受影响的业务路径，但不得用无关任务填充空档；当前没有 READY 的 implementation 任务时，直接报告并请求一个具体产品目标。
 
 恢复提示：
 - 状态缺失或无法解析时运行 `aps doctor --standard-only`，人工修复 `.ai/state.yaml` 后再运行 `aps resume --no-launch`。
@@ -39,9 +40,9 @@ Bootstrap 顺序：
 9. 局部变更留在当前 Stage 并做相关验证；只有实际改变已确认契约、Scope 或下游影响时，才使用 `.ai/templates/change-log.md` 记录影响并路由到受影响 Stage。Stage 22 是可用的变更记录路由，不是固定前置门禁。
 10. 使用 Agent Skill 时检查路径、结构、同名冲突和可用性；未验证的 Skill 不得假装生效。
 11. 文档、代码、状态、Skill 与已确认 Decision 冲突时，保留 `user_decision` blocker，等待用户处理，不自行猜测。
-12. 执行当前已明确授权的任务和验证；没有 active task 时不要自动挑选任务，不因普通记录缺失而停止，也不一次执行整个开发周期。
+12. 执行当前已明确授权的任务，或执行当前用户明确提出的具体产品实现请求和验证；没有 active task 且没有具体产品请求时不要自动挑选任务，不因普通记录缺失而停止，也不一次执行整个开发周期。
 13. 全局治理写入使用 Single Writer、锁、revision 和 compare-before-write；并行任务不得覆盖共享状态。
-14. 只有明确 HOLD/STOP、待处理用户决策、安全错误、用户要求的确认，或 `EXECUTION_LOOP` 没有 active task / 当前任务结束或阻塞时暂停。普通 Stage 完成后可按 Transition Contract 记录状态，不要求额外的唯一 NEXT、计划或“Stage PASS”确认。
+14. 只有明确 HOLD/STOP、待处理用户决策、安全错误、用户要求的确认，或 `EXECUTION_LOOP` 没有 active task 且没有具体产品请求 / 当前任务结束或阻塞时暂停。普通 Stage 完成后可按 Transition Contract 记录状态，不要求额外的唯一 NEXT、计划或“Stage PASS”确认。
 15. 需要交接时可输出简短 Stage User Brief；需要产品单页时可按需从 Stage 08 Artifact 生成 PRD Snapshot。两者都是辅助记录，不替代实际代码、Artifact 和验证。
 
 研究和决策：

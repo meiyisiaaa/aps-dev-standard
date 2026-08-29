@@ -1,8 +1,8 @@
 # AI 项目 Artifact & State 标准（Project Artifact & State Standard）
 
-**Standard Version:** `1.3.7`<br>
+**Standard Version:** `1.3.8`<br>
 **Status:** `ACTIVE`  
-**Companion Lifecycle Standard:** `1.3.7`
+**Companion Lifecycle Standard:** `1.3.8`
 
 > 本标准约束 AI 在项目中创建、读取、更新、验证、同步、迁移和归档 Artifact 与项目状态。  
 > `.ai/standards/lifecycle.md`定义生命周期与执行 Contract；本标准定义项目状态如何持久化以及哪个 Source of Truth 具有权威性。
@@ -463,7 +463,7 @@ Reference UI 确认
 
 ```yaml
 schema_version: 1
-standard_version: "1.3.7"
+standard_version: "1.3.8"
 revision: 1
 
 cycle: CYCLE-001
@@ -1143,7 +1143,7 @@ PRODUCTION CHANGE EXPECTED
 AUTHORIZATION
 ```
 
-任务类型只允许 `implementation`、`verification`、`governance`、`external`。只有明确授权的 `implementation` 任务才算进入开发；“继续”不得授权新任务，Coordinator 必须在 `.ai/state.yaml` 记录 `active_task_ref` 和 `active_task_kind`。没有 active task 时不得从任务列表自动挑选。
+任务类型只允许 `implementation`、`verification`、`governance`、`external`。明确授权的 `implementation` 任务和用户明确提出的具体产品实现请求才算进入开发；“继续”不得授权新任务，Coordinator 只有在用户明确给出 `TASK-*` 时才在 `.ai/state.yaml` 记录 `active_task_ref` 和 `active_task_kind`。没有 active task 且没有具体产品请求时不得从任务列表自动挑选，也不得创建治理文件替代开发。
 
 任务完成后记录：
 
@@ -1181,7 +1181,7 @@ Review 完成
 
 Task 的验证清单应与实际影响匹配；定向验证用于减少无关重复，只有明确受影响的 Stage、Gate 或 Release 检查才需要加入验证范围。
 
-`verification`、`governance`、`external` 任务的完成不等于产品开发完成；它们必须在输出中保留任务类型和授权来源。待决策或外部依赖阻塞时，不得用无关 Task、文档或升级动作制造进度。
+`verification`、`governance`、`external` 任务的完成不等于产品开发完成；它们必须在输出中保留任务类型和授权来源。待决策或外部依赖阻塞时，不得用无关 Task、文档、升级动作或审计制造进度；具体产品请求应直接路由到实现。
 
 才允许：
 

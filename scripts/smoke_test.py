@@ -281,7 +281,7 @@ def main() -> int:
         (broken_bundle / "package" / "standards" / "lifecycle.md").unlink()
         run_python_expect_failure(str(broken_bundle / "package" / "tools" / "standards-lint.py"))
         bootstrap_prompt = (project / ".ai" / "bootstrap" / "bootstrap-prompt.txt").read_text(encoding="utf-8")
-        required_prompt_markers = ("23 个 Stage/Gate", "普通任务可以继续", "Single Writer", "compare-before-write", "Stage User Brief", "Artifact Contract", "Research", "Decision Request", "Stage 22", "Task routing guard", "active_task_ref", "active_task_kind", "不得按任务列表自动挑选")
+        required_prompt_markers = ("23 个 Stage/Gate", "具体产品请求可以直接实现", "Single Writer", "compare-before-write", "Stage User Brief", "Artifact Contract", "Research", "Decision Request", "Stage 22", "Task routing guard", "active_task_ref", "active_task_kind", "不得按任务列表自动挑选", "具体产品")
         if any(marker not in bootstrap_prompt for marker in required_prompt_markers):
             raise SystemExit("bootstrap prompt does not describe optional governance and hard stops")
         forbidden_prompt_markers = ("Stage 01、05、06、07、08、09、10、13、14、15、16、20", "必须逐项说明", "所有项目必须维护")
@@ -511,12 +511,13 @@ def main() -> int:
         if (
             "Planning:" in normal_status
             or "Active task: none (no explicit task authorization)" not in normal_status
+            or "a concrete user product request may proceed directly" not in normal_status
             or "do not auto-select from task list" not in normal_status
-            or "提供明确 TASK-ID" not in normal_status
+            or "具体产品目标或明确 TASK-ID" not in normal_status
         ):
             raise SystemExit("execution Stage did not require an explicitly authorized task")
         normal_resume = run_python_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
-        if "Active task: none (no explicit task authorization)" not in normal_resume or "提供明确 TASK-ID" not in normal_resume:
+        if "Active task: none (no explicit task authorization)" not in normal_resume or "具体产品目标或明确 TASK-ID" not in normal_resume:
             raise SystemExit("execution handoff did not carry the explicit task guard")
         governance_state = execution_state.replace("active_task_ref: null", "active_task_ref: TASK-001").replace("active_task_kind: null", "active_task_kind: governance")
         state.write_text(governance_state, encoding="utf-8")

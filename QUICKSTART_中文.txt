@@ -12,8 +12,8 @@ git diff --cached --check
 git commit -m "Configure APS distribution"
 git push
 
-git tag v1.3.7
-git push origin v1.3.7
+git tag v1.3.8
+git push origin v1.3.8
 
 之后任何机器：
 
@@ -42,7 +42,7 @@ aps resume
 aps doctor
 aps status
 
-项目风险级别、Transition audit 和 Release readiness 都是可选元数据；存在时检查，缺失或过期只提示 WARN，不猜测为 NORMAL。普通 Stage 完成实际工作和相关验证后可记录 COMPLETE + PASS 并按需继续；待处理用户决策、明确 HOLD / STOP、安全边界、Release approval，以及 Stage 17 缺少 active task 仍保留为暂停条件。
+项目风险级别、Transition audit 和 Release readiness 都是可选元数据；存在时检查，缺失或过期只提示 WARN，不猜测为 NORMAL。普通 Stage 完成实际工作和相关验证后可记录 COMPLETE + PASS 并按需继续；待处理用户决策、明确 HOLD / STOP、安全边界、Release approval，以及 Stage 17 没有 active task 且没有具体产品请求仍保留为暂停条件。
 
 遇到问题后的恢复：
 1. 先运行 aps status 查看提示；NEXT 是建议，不要求唯一或必须执行。
@@ -53,7 +53,7 @@ aps status
 6. 待决策时运行 aps decision show/list，在当前对话确认问题，再运行 aps decision answer 或 aps decision cancel。
 7. 风险基线、Transition 审计、Release readiness、PRD Snapshot 或 Registry 缺失/过期/普通内容不完整时，APS 给出 WARN 并继续；路径、链接、不可安全读取、运行状态、manifest 和托管文件完整性问题仍会拒绝继续。不要猜测为 NORMAL 或手动把 Gate 改成 PASS。
 
-任务执行硬规则：`继续` 只延续当前已明确授权的任务，不授权新任务，也不会按列表自动选择下一个任务。Stage 17 必须记录 `active_task_ref` 和 `active_task_kind`；只有 `implementation` 且预计修改生产代码或测试的任务才算进入开发。没有 READY 的 implementation 任务时，直接报告并请求具体 TASK-ID，不得用审计、文档、升级或无关验证制造进度。
+任务执行硬规则：用户明确提出产品 bug、功能或可验收行为时，应直接进入实现，不先写审计或任务清单。`继续` 只延续当前已明确授权的任务，不授权新任务，也不会按列表自动选择下一个任务；没有明确产品目标时才请求具体产品目标或 TASK-ID。只有 `implementation` 且预计修改生产代码或测试的任务，或明确要求生产代码变更的具体产品请求，才算进入开发；不得用审计、文档、升级或无关验证制造进度。
 
 交接时携带当前 Stage / Task 和直接引用即可；Stage User Brief 有帮助时再输出，不要每轮重复。复杂任务可先写简短计划，但计划不是固定门禁。大型项目可以并行 Task，但全局状态、Gate、Decision 和 Registry 仍由 Coordinator 统一维护。
 

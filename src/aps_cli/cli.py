@@ -410,7 +410,7 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
             lines.append(f"Active task: {active_task_ref} ({active_task_kind})")
         if execution_loop:
             if active_task_ref is None:
-                lines.append("Execution guard: no active task authorization; do not auto-select from task list.")
+                lines.append("Execution guard: no task-list task selected; a concrete user product request may proceed directly; do not auto-select from task list.")
             elif active_task_kind == "implementation":
                 lines.append("Execution guard: implementation task explicitly authorized.")
             else:
@@ -467,7 +467,7 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
         elif stage_ready:
             next_action = "按需读取 Transition Contract，进入指定的下一 Stage。"
         elif execution_loop and active_task_ref is None:
-            next_action = "请先处理当前 blocker（如有），再提供明确 TASK-ID 和任务类型；APS 不会按任务列表自动选择任务。"
+            next_action = "请先处理当前 blocker（如有），再提供具体产品目标或明确 TASK-ID 和任务类型；APS 不会按任务列表自动选择，也不会用治理文件替代开发。"
         elif execution_loop and active_task_kind != "implementation":
             next_action = "继续当前已授权任务；验证、治理或外部任务不等于产品开发。"
         elif gate == "REVISE":
