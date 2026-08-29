@@ -14,6 +14,7 @@ from .installer import STANDARD_VERSION_RE, assert_no_reparse, atomic_write
 
 DECISION_ID_RE = re.compile(r"^DEC-[A-Z0-9][A-Z0-9_-]*$")
 CYCLE_RE = re.compile(r"^CYCLE-[0-9]{3,}$")
+TASK_REF_RE = re.compile(r"^TASK-[A-Z0-9][A-Z0-9_-]*$")
 INPUT_TYPES = {
     "single_select",
     "multi_select",
@@ -32,6 +33,8 @@ STATE_ORDER = [
     "stage_type",
     "stage_status",
     "gate_status",
+    "active_task_ref",
+    "active_task_kind",
     "current_goal",
     "scope_ref",
     "blockers",
@@ -45,6 +48,7 @@ STATE_ORDER = [
 STATE_STAGE_TYPES = {"GATED", "EXECUTION_LOOP", "OBSERVATION_LOOP", "ROUTER"}
 STATE_STAGE_STATUSES = {"ACTIVE", "BLOCKED", "COMPLETE"}
 STATE_GATE_STATUSES = {"PENDING", "PASS", "REVISE", "HOLD", "STOP"}
+TASK_KINDS = {"implementation", "verification", "governance", "external"}
 DECISION_FIELDS = {
     "$schema",
     "schema_version",
@@ -265,6 +269,19 @@ def validate_runtime_state(data: dict[str, Any]) -> dict[str, Any]:
         raise DecisionError(f"GATED Stage 的 gate_status 无效：{gate_status}")
     if stage_type != "GATED" and gate_status is not None:
         raise DecisionError("非 GATED Stage 的 gate_status 必须是 null")
+    active_task_ref = data.get("active_task_ref")
+    active_task_kind = data.get("active_task_kind")
+    if active_task_ref is not None and (not isinstance(active_task_ref, str) or not TASK_REF_RE.fullmatch(active_task_ref)):
+        raise DecisionError("state.yaml 的 active_task_ref 必须匹配 TASK-*")
+    if active_task_kind is not None and (not isinstance(active_task_kind, str) or active_task_kind not in TASK_KINDS):
+        raise DecisionError(f"state.yaml 的 active_task_kind 无效：{active_task_kind}")
+    task_keys = {"active_task_ref", "active_task_kind"} & set(data)
+    if task_keys and task_keys != {"active_task_ref", "active_task_kind"}:
+        raise DecisionError("state.yaml 的 active_task_ref 和 active_task_kind 必须同时填写或同时为 null")
+    if (active_task_ref is None) != (active_task_kind is None):
+        raise DecisionError("state.yaml 的 active_task_ref 和 active_task_kind 必须同时填写或同时为 null")
+    if stage_status == "COMPLETE" and active_task_ref is not None:
+        raise DecisionError("COMPLETE Stage 不能保留 active_task_ref")
     if not isinstance(data["blockers"], list) or any(not isinstance(item, dict) for item in data["blockers"]):
         raise DecisionError("state.yaml 的 blockers 必须是对象列表")
     for key, pattern in (

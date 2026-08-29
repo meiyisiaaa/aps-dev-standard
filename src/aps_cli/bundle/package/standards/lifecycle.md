@@ -1,8 +1,8 @@
 # AI 产品开发生命周期标准（Full-Cycle Engineering Standard）
 
-**Standard Version:** `1.3.6`<br>
+**Standard Version:** `1.3.7`<br>
 **Status:** `ACTIVE`  
-**Companion Artifact Standard:** `1.3.6`
+**Companion Artifact Standard:** `1.3.7`
 
 > 本标准定义 AI 参与产品开发时的统一生命周期、Stage Contract、Gate、Agent Runtime、Skill、验证、追踪和变更参考。
 > 23 个 Stage/Gate 用于导航和状态记录；普通流程条件不自动成为 CLI 阻塞。不得用未确认假设替代重大决策，不得把聊天内容视为已经落盘的项目状态。
@@ -2639,6 +2639,14 @@ Tests
 Out of Scope
 ```
 
+每个 Task 还必须明确：
+
+```text
+Task Type：implementation / verification / governance / external
+Production Change Expected：true / false
+Authorization：explicit TASK-ID / continuation of active task
+```
+
 验收必须可观察。
 
 禁止：
@@ -2687,6 +2695,19 @@ Out of Scope
 ---
 
 # 17. AI Build
+
+## Entry Guard
+
+Stage 17 不会替用户选择任务。进入或继续执行前必须先确认：
+
+```text
+active_task_ref = 明确的 TASK-*
+active_task_kind = implementation / verification / governance / external
+```
+
+“继续”只延续当前 active task，不产生新的任务授权。没有 active task、当前任务已结束或当前任务被阻塞时，必须停止并请求明确 `TASK-*`；不得按顺序、优先级、依赖或便利性自动挑选下一个任务。
+
+只有 `active_task_kind=implementation` 且 `Production Change Expected=true` 才算进入产品开发。验证、治理和外部验收任务可以单独执行，但不能被描述为开发，也不能用来填充被 blocker 暂停的开发路径。
 
 ## 固定执行顺序
 

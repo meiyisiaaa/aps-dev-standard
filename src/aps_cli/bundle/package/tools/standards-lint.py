@@ -222,6 +222,19 @@ def validate_bundle(lifecycle: Path, artifact: Path, bootstrap: Path, report: Re
     else:
         report.error("bootstrap missing concurrency controls")
 
+    task_routing_markers = (
+        "Task routing guard",
+        "active_task_ref",
+        "active_task_kind",
+        "Task Type",
+        "Production Change Expected",
+        "不得按任务列表自动挑选",
+    )
+    if all(marker in life + "\n" + art + "\n" + boot for marker in task_routing_markers):
+        report.pass_("task routing requires explicit authorization and a development kind")
+    else:
+        report.error("task routing guard is incomplete")
+
     if "PENDING USER DECISION" in life or "PENDING USER DECISION" in boot:
         report.error("legacy pseudo GateStatus 'PENDING USER DECISION' remains in executable standard/prompt")
 

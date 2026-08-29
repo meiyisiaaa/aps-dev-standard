@@ -281,7 +281,7 @@ def main() -> int:
         (broken_bundle / "package" / "standards" / "lifecycle.md").unlink()
         run_python_expect_failure(str(broken_bundle / "package" / "tools" / "standards-lint.py"))
         bootstrap_prompt = (project / ".ai" / "bootstrap" / "bootstrap-prompt.txt").read_text(encoding="utf-8")
-        required_prompt_markers = ("23 个 Stage/Gate", "普通任务可以继续", "Single Writer", "compare-before-write", "Stage User Brief", "Artifact Contract", "Research", "Decision Request", "Stage 22")
+        required_prompt_markers = ("23 个 Stage/Gate", "普通任务可以继续", "Single Writer", "compare-before-write", "Stage User Brief", "Artifact Contract", "Research", "Decision Request", "Stage 22", "Task routing guard", "active_task_ref", "active_task_kind", "不得按任务列表自动挑选")
         if any(marker not in bootstrap_prompt for marker in required_prompt_markers):
             raise SystemExit("bootstrap prompt does not describe optional governance and hard stops")
         forbidden_prompt_markers = ("Stage 01、05、06、07、08、09、10、13、14、15、16、20", "必须逐项说明", "所有项目必须维护")
@@ -474,6 +474,9 @@ def main() -> int:
             normal_state.replace("stage: 1", "stage: 99"),
             normal_state.replace("gate_status: PENDING", "gate_status: UNKNOWN"),
             normal_state.replace("stage_type: GATED", "stage_type: EXECUTION_LOOP"),
+            normal_state.replace("active_task_ref: null", "active_task_ref: TASK-001"),
+            normal_state.replace("active_task_kind: null", ""),
+            normal_state.replace("stage_status: ACTIVE", "stage_status: COMPLETE").replace("gate_status: PENDING", "gate_status: PASS").replace("active_task_ref: null", "active_task_ref: TASK-001").replace("active_task_kind: null", "active_task_kind: implementation"),
             normal_state.replace("updated_by: coordinator", "unexpected_state_field: true\nupdated_by: coordinator"),
             normal_state.replace("revision: 1", "revision: 1\nrevision: 2"),
         )
@@ -501,11 +504,28 @@ def main() -> int:
             raise SystemExit("non-file state path did not use the safe recovery path")
         state.rmdir()
         state.write_text(normal_state, encoding="utf-8")
-        state.write_text(normal_state.replace("revision: 1", "revision: 3").replace("stage: 1", "stage: 17").replace("stage_type: GATED", "stage_type: EXECUTION_LOOP").replace("gate_status: PENDING", "gate_status: null"), encoding="utf-8")
+        execution_state = normal_state.replace("revision: 1", "revision: 3").replace("stage: 1", "stage: 17").replace("stage_type: GATED", "stage_type: EXECUTION_LOOP").replace("gate_status: PENDING", "gate_status: null")
+        state.write_text(execution_state, encoding="utf-8")
         write_transition_audit(project)
         normal_status = run_python_capture("aps.py", "status", str(project))
-        if "Planning:" in normal_status:
-            raise SystemExit("status incorrectly exposed planning for an execution Stage")
+        if (
+            "Planning:" in normal_status
+            or "Active task: none (no explicit task authorization)" not in normal_status
+            or "do not auto-select from task list" not in normal_status
+            or "提供明确 TASK-ID" not in normal_status
+        ):
+            raise SystemExit("execution Stage did not require an explicitly authorized task")
+        normal_resume = run_python_capture("aps.py", "resume", str(project), "--host", "generic", "--no-launch")
+        if "Active task: none (no explicit task authorization)" not in normal_resume or "提供明确 TASK-ID" not in normal_resume:
+            raise SystemExit("execution handoff did not carry the explicit task guard")
+        governance_state = execution_state.replace("active_task_ref: null", "active_task_ref: TASK-001").replace("active_task_kind: null", "active_task_kind: governance")
+        state.write_text(governance_state, encoding="utf-8")
+        write_transition_audit(project)
+        governance_status = run_python_capture("aps.py", "status", str(project))
+        if "Active task: TASK-001 (governance)" not in governance_status or "this is not product implementation" not in governance_status or "验证、治理或外部任务不等于产品开发" not in governance_status:
+            raise SystemExit("non-implementation task was not clearly separated from product development")
+        state.write_text(execution_state, encoding="utf-8")
+        write_transition_audit(project)
         normal_readiness = json.loads((project / ".ai" / "templates" / "release-readiness.json").read_text(encoding="utf-8"))
         normal_readiness.update({"profile": "NORMAL", "status": "READY", "target_environment": "staging", "checks": {name: {"status": "PASS", "evidence_refs": [f"TEST-{name.upper()}"]} for name in ("lint", "build", "functional_qa", "rollback")}, "reviewed_at": "2026-08-27T00:00:04+00:00"})
         (project / ".ai" / "release-readiness.json").write_text(json.dumps(normal_readiness, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

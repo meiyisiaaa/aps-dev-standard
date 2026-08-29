@@ -14,6 +14,8 @@
     "stage_type": {"enum": ["GATED", "EXECUTION_LOOP", "OBSERVATION_LOOP", "ROUTER"]},
     "stage_status": {"enum": ["ACTIVE", "BLOCKED", "COMPLETE"]},
     "gate_status": {"type": ["string", "null"], "enum": ["PENDING", "PASS", "REVISE", "HOLD", "STOP", null]},
+    "active_task_ref": {"type": ["string", "null"], "pattern": "^TASK-[A-Z0-9][A-Z0-9_-]*$"},
+    "active_task_kind": {"type": ["string", "null"], "enum": ["implementation", "verification", "governance", "external", null]},
     "current_goal": {"type": "string"},
     "scope_ref": {"type": ["string", "null"]},
     "blockers": {"type": "array", "items": {"type": "object"}},
@@ -29,6 +31,26 @@
       "if": {"properties": {"stage_type": {"const": "GATED"}}},
       "then": {"properties": {"gate_status": {"enum": ["PENDING", "PASS", "REVISE", "HOLD", "STOP"]}}},
       "else": {"properties": {"gate_status": {"type": "null"}}}
+    },
+    {
+      "if": {"required": ["active_task_ref"]},
+      "then": {"required": ["active_task_kind"]}
+    },
+    {
+      "if": {"required": ["active_task_kind"]},
+      "then": {"required": ["active_task_ref"]}
+    },
+    {
+      "if": {"required": ["active_task_ref"], "properties": {"active_task_ref": {"type": "null"}}},
+      "then": {"properties": {"active_task_kind": {"type": "null"}}}
+    },
+    {
+      "if": {"required": ["active_task_kind"], "properties": {"active_task_kind": {"type": "null"}}},
+      "then": {"properties": {"active_task_ref": {"type": "null"}}}
+    },
+    {
+      "if": {"required": ["stage_status", "active_task_ref", "active_task_kind"], "properties": {"stage_status": {"const": "COMPLETE"}}},
+      "then": {"properties": {"active_task_ref": {"type": "null"}, "active_task_kind": {"type": "null"}}}
     }
   ]
 }

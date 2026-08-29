@@ -400,6 +400,21 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
         f"Stage: {state.get('stage', 'unknown')} / {state.get('stage_type', 'unknown')}",
         f"Status: {state.get('stage_status', 'unknown')}",
     ]
+    execution_loop = state.get("stage_type") == "EXECUTION_LOOP"
+    active_task_ref = state.get("active_task_ref")
+    active_task_kind = state.get("active_task_kind")
+    if execution_loop or active_task_ref is not None:
+        if active_task_ref is None:
+            lines.append("Active task: none (no explicit task authorization)")
+        else:
+            lines.append(f"Active task: {active_task_ref} ({active_task_kind})")
+        if execution_loop:
+            if active_task_ref is None:
+                lines.append("Execution guard: no active task authorization; do not auto-select from task list.")
+            elif active_task_kind == "implementation":
+                lines.append("Execution guard: implementation task explicitly authorized.")
+            else:
+                lines.append(f"Execution guard: {active_task_kind} task; this is not product implementation.")
     if include_profile:
         profile, profile_error = load_project_profile(root)
         if profile is not None:
@@ -451,6 +466,10 @@ def _runtime_summary(root: Path, *, include_profile: bool = True) -> list[str]:
             next_action = "当前 Cycle 处于 STOP；等待明确恢复或创建新 Cycle。"
         elif stage_ready:
             next_action = "按需读取 Transition Contract，进入指定的下一 Stage。"
+        elif execution_loop and active_task_ref is None:
+            next_action = "请先处理当前 blocker（如有），再提供明确 TASK-ID 和任务类型；APS 不会按任务列表自动选择任务。"
+        elif execution_loop and active_task_kind != "implementation":
+            next_action = "继续当前已授权任务；验证、治理或外部任务不等于产品开发。"
         elif gate == "REVISE":
             next_action = "继续当前 Stage，按需修订并验证。"
         elif blockers:

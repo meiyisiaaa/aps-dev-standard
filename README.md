@@ -19,8 +19,8 @@ git push
 Then tag a release:
 
 ```bash
-git tag v1.3.6
-git push origin v1.3.6
+git tag v1.3.7
+git push origin v1.3.7
 ```
 
 When changing files under `src/aps_cli/bundle/package/`, refresh their manifest checksums before committing:
@@ -29,7 +29,7 @@ When changing files under `src/aps_cli/bundle/package/`, refresh their manifest 
 python scripts/build_release.py --refresh-manifest
 ```
 
-GitHub Actions builds `APS_CLI_1.3.6.zip` and its SHA-256 file and attaches them to the Release.
+GitHub Actions builds `APS_CLI_1.3.7.zip` and its SHA-256 file and attaches them to the Release.
 The online installers verify that SHA-256 file and fail closed when no verified Release asset is available.
 
 ## One-line install
@@ -68,7 +68,9 @@ aps doctor
 aps status
 ```
 
-项目风险级别、Transition audit 和 Release readiness 都是可选元数据；存在时 APS 会检查，缺失或过期只给出 WARN，不猜测为 `NORMAL`。普通 Stage 可在完成实际任务和相关验证后记录 `COMPLETE + PASS` 并按需进入 Transition Contract；用户决策、明确的 `HOLD` / `STOP`、安全边界和 Release approval 仍保留为暂停条件。
+项目风险级别、Transition audit 和 Release readiness 都是可选元数据；存在时 APS 会检查，缺失或过期只给出 WARN，不猜测为 `NORMAL`。普通 Stage 可在完成实际任务和相关验证后记录 `COMPLETE + PASS` 并按需进入 Transition Contract；用户决策、明确的 `HOLD` / `STOP`、安全边界、Release approval，以及 Stage 17 缺少 active task 仍保留为暂停条件。
+
+任务执行硬规则：`继续` 不会授权新任务，也不会按列表自动选择下一个任务。Stage 17 必须先记录明确的 `active_task_ref` 和 `active_task_kind`；只有 `implementation` 且预计修改生产代码或测试的任务才算进入开发。没有 READY 的 implementation 任务时，APS/Agent 必须直接报告并请求具体 TASK-ID，不得用审计、文档、升级或无关验证制造进度。
 
 已有项目：
 
